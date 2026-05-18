@@ -30,7 +30,7 @@ This repository is the Victrl MVP version, open-sourced under the Apache 2.0 lic
 - **Zero intrusion**: No modifications to the target system, no software installed, no log traces left behind
 - **LLM-driven decisions**: Calls any multimodal large model (GPT, Claude, Gemini, Doubao-seed, etc.) to understand the screen and generate operation instructions
 - **Offline capable**: Currently relies on cloud models, but the architecture allows local small-model deployment for full localization
-- **Lightweight control**: Only requires V4L2 + uinput, core loop implemented in Python with extremely low resource usage, potentially fully portable to an MCU
+- **Lightweight control**: Core loop implemented in Python with extremely low resource usage, potentially fully portable to an MCU
 - **Memory system**: L1, L2, L3 — allows the model to autonomously append experience
 - **HTTP API**: Provides interfaces for task start/stop, status query, configuration management, etc.
 - **Extensible architecture**: Reserved extension points such as a skill system, on-demand loading, and exploration mode
@@ -110,34 +110,7 @@ Data flow summary:
 
 ## Quick Start:
 
-### Hardware Preparation
-- RK3566 development board (with Armbian / Ubuntu 22.04+ installed) or any Linux host
-- USB capture card
-- HDMI cable, USB A-to-A cable
-
-> Reference: [ZERO Series | Radxa Docs](https://docs.radxa.com/zero)
-
-### Software Installation
-
-```bash
-To be updated
-```
-
-#### Configuration:
-
-Edit `device_profile.md` (describe the target device's characteristics, common shortcuts, etc. in natural language). A template will be automatically generated on first run.
-
-### Run the Agent
-
-```bash
-To be updated
-```
-
-### HTTP API Example
-
-```bash
-To be updated
-```
+See [Main](Main/README.md).
 
 ------
 
@@ -156,7 +129,7 @@ The following capabilities are only reserved in the architecture for this versio
 
 Victrl transforms "visual automation" from a software solution into a hardware peripheral, thereby bypassing any software restrictions on the target device (such as firewalls, permission policies, system integrity protection). It is recognized by the target device as a standard keyboard/mouse. This means it can perform any keyboard/mouse operation, including but not limited to: launching commands, deleting files, modifying system settings, downloading malware.
 
-Victrl itself contains no malicious logic and does not attempt to bypass any security mechanisms. However, once connected to an untrusted host controller or if the configuration file is maliciously tampered with, serious consequences may result. Users must:
+This type of hardware-level add-on challenges the security of virtually all potential target devices today. Victrl itself contains no malicious logic and does not attempt to bypass any security mechanisms. However, once connected to an untrusted host controller or if the configuration file is maliciously tampered with, serious consequences may result. Users must:
 
 - Thoroughly test
 - Physically protect the Victrl device from unauthorized access
@@ -169,4 +142,4 @@ Victrl MVP is open-sourced under the **Apache 2.0 License**. This project is int
 
 ------
 
-> *It doesn't read your memory, it doesn't occupy your device — it just quietly watches the screen, then presses the keyboard for you, just like a human would.*
+> *It doesn't read your RAM, it doesn't occupy your device — it just quietly watches the screen, then presses the keyboard for you, just like a human would.*

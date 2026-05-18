@@ -1,0 +1,34 @@
+{
+    "_comment": "Victrl configuration — edit this file, not config.py",
+
+    "uvc": {
+        "device": "/dev/video0",
+        "screen_width": 1920,
+        "screen_height": 1080
+    },
+
+    "api": {
+        "endpoint": "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+        "key": "YOUR-API-KEY-HERE",
+        "model_name": "doubao-seed-2-0-mini-260428",
+        "timeout": 60,
+        "max_retries": 1
+    },
+
+    "agent": {
+        "max_actions": 200,
+        "history_max_len": 10
+    },
+
+    "paths": {
+        "plan_dir": "./plans",
+        "profile_dir": "./profiles",
+        "profile_file": "device_profile.md",
+        "log_file": "/var/log/victrl/agent.log"
+    },
+
+    "http": {
+        "host": "127.0.0.1",
+        "port": 8080
+    }
+}
