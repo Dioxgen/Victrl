@@ -1,6 +1,7 @@
-evdev>=1.6.1
+volcengine-python-sdk[ark]>=1.0.0
 Pillow>=10.0.0
 numpy>=1.24.0
-requests>=2.31.0
+opencv-python-headless>=4.8.0
+pyserial>=3.5
 flask>=3.0.0
-pyyaml>=6.0
+evdev>=1.6.1

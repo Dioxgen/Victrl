@@ -69,6 +69,15 @@ class SerialHidBridge:
             self._ser.flush()
         except serial.SerialException as e:
             logger.error(f"Serial write failed: {e}")
+            # ESP32 likely disconnected — fall back to dry-run so agent
+            # doesn't keep trying to write to a dead port.
+            self.dry_run = True
+            try:
+                self._ser.close()
+            except Exception:
+                pass
+            self._ser = None
+            logger.critical("SerialHidBridge disconnected — all subsequent HID commands will be NO-OP")
 
     def _wait_ack(self) -> bool:
         """Read one line of acknowledgement from ESP32 (non-blocking best-effort)."""
@@ -86,6 +95,8 @@ class SerialHidBridge:
     def set_screen_size(self, width: int, height: int) -> None:
         self._screen_width = width
         self._screen_height = height
+        self._send(f"Z {width} {height}")
+        time.sleep(0.02)  # let ESP32 process before next command
 
     def mouse_move_abs(self, x: int, y: int) -> None:
         self._send(f"M {x} {y}")
@@ -110,12 +121,58 @@ class SerialHidBridge:
     def mouse_scroll(self, delta_x: int = 0, delta_y: int = 0) -> None:
         self._send(f"S {delta_x} {delta_y}")
 
+    # Special keys that the ESP32 K command handles unreliably due to a
+    # PROGMEM lookup bug for multi-character key names. For these we use
+    # the T (type) command with the corresponding ASCII control character
+    # which the ESP32 firmware handles correctly.
+    _K_TO_CHAR = {
+        "enter":     "\n",
+        "tab":       "\t",
+        "backspace": "\b",
+        "escape":    "\x1b",
+        "space":     " ",
+    }
+
     def key_press(self, key_combo: str) -> None:
+        # Route named special keys through the T (type) command to avoid
+        # ESP32 firmware PROGMEM lookup bug for multi-char key names.
+        key_lower = key_combo.lower()
+        if key_lower in self._K_TO_CHAR:
+            encoded = base64.b64encode(
+                self._K_TO_CHAR[key_lower].encode("utf-8")
+            ).decode("ascii")
+            self._send(f"T {encoded}")
+            return
         self._send(f"K {key_combo}")
 
-    def type_string(self, text: str, delay_ms: float = 5.0) -> None:
-        encoded = base64.b64encode(text.encode("utf-8")).decode("ascii")
-        self._send(f"T {encoded}")
+    # US QWERTY shift mapping — which unshifted key + shift = the desired char
+    _SHIFT_MAP = {
+        '!': '1', '@': '2', '#': '3', '$': '4', '%': '5', '^': '6', '&': '7',
+        '*': '8', '(': '9', ')': '0', '_': '-', '+': '=', '{': '[', '}': ']',
+        '|': '\\', ':': ';', '"': "'", '<': ',', '>': '.', '?': '/', '~': '`',
+    }
+
+    def type_string(self, text: str, delay_ms: float = 25.0) -> None:
+        # Send each character individually via K command. The ESP32 T command's
+        # base64 path drops characters at BLE speeds (5-15ms per char) and the
+        # firmware's asciiToHid() doesn't map shifted symbols.  Sending from
+        # Python with explicit shift handling and 25ms spacing is reliable.
+        import time as _time
+        for ch in text:
+            if ch == '\n':
+                self._send("K enter")
+            elif ch == '\t':
+                self._send("K tab")
+            elif ch == ' ':
+                encoded = base64.b64encode(b' ').decode("ascii")
+                self._send(f"T {encoded}")
+            elif 'A' <= ch <= 'Z':
+                self._send(f"K shift+{ch.lower()}")
+            elif ch in self._SHIFT_MAP:
+                self._send(f"K shift+{self._SHIFT_MAP[ch]}")
+            else:
+                self._send(f"K {ch}")
+            _time.sleep(delay_ms / 1000.0)
 
     def release_all(self) -> None:
         self._send("R")

@@ -8,10 +8,10 @@
     },
 
     "api": {
-        "endpoint": "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
-        "key": "YOUR-API-KEY-HERE",
-        "model_name": "doubao-seed-2-0-mini-260428",
-        "timeout": 60,
+        "endpoint": "YOUR-ENDPOINT",
+        "key": "YOUR-API-KEY",
+        "model_name": "MODEL-NAME",
+        "timeout": 120,
         "max_retries": 1
     },
 
@@ -24,7 +24,7 @@
         "plan_dir": "./plans",
         "profile_dir": "./profiles",
         "profile_file": "device_profile.md",
-        "log_file": "/var/log/victrl/agent.log"
+        "log_dir": "./log"
     },
 
     "http": {

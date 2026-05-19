@@ -5,6 +5,8 @@ Fallback: direct Python V4L2 ioctl/mmap (no OpenCV dependency).
 Last resort: ffmpeg JPEG snapshot.
 """
 
+import glob
+import hashlib
 import logging
 import subprocess
 import time
@@ -19,6 +21,9 @@ from utils.exceptions import UvcError
 logger = logging.getLogger("victrl.uvc")
 
 _FRAME_TMP = Path("/tmp/victrl_frame.jpg")
+
+# Number of frames to discard after opening the device (MS2109 warmup)
+_WARMUP_FRAMES = 8
 
 # ── Optional OpenCV import ─────────────────────────────────────────────────
 _CV2 = None
@@ -82,17 +87,34 @@ class UvcCapture:
     def _try_opencv(self) -> bool:
         cap = cv2.VideoCapture(self.device)
         if not cap.isOpened():
+            logger.warning(f"OpenCV: failed to open {self.device}")
             return False
         # Set MJPEG and target resolution
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-        # Verify by reading one frame
-        ok, _ = cap.read()
-        if not ok:
+
+        # Warmup: discard first N frames — MS2109 needs several frames
+        # after stream start before the video pipeline stabilizes
+        warmup_ok = False
+        for i in range(_WARMUP_FRAMES):
+            ok, frame = cap.read()
+            if ok and frame is not None:
+                warmup_ok = True
+                logger.debug(f"OpenCV warmup frame {i+1}/{_WARMUP_FRAMES}: "
+                            f"shape={frame.shape}, mean={frame.mean():.1f}, "
+                            f"std={frame.std():.1f}")
+            else:
+                logger.warning(f"OpenCV warmup frame {i+1}/{_WARMUP_FRAMES}: FAILED (ok={ok})")
+        if not warmup_ok:
+            logger.error(f"OpenCV: all {_WARMUP_FRAMES} warmup frames failed")
             cap.release()
             return False
         self._cap = cap
+        self._last_mean = None
+        self._frame_count = 0
+        logger.info(f"OpenCV backend ready: {self.device} @ {self.width}x{self.height} MJPEG "
+                    f"({_WARMUP_FRAMES} warmup frames discarded)")
         return True
 
     def _try_v4l2(self) -> bool:
@@ -103,8 +125,47 @@ class UvcCapture:
         return True
 
     # ── Frame capture ──────────────────────────────────────────────────────
+    @staticmethod
+    def _wake_ms2109() -> None:
+        """Disable autosuspend on MacroSilicon MS2109 devices.
+
+        These devices suspend after 2s of idle and resume with a color-bar
+        test pattern instead of live video. Writing 'on' to power/control
+        prevents the suspend entirely.
+
+        Only writes if the current value is not already 'on', to avoid
+        unnecessary sysfs writes that might disrupt the video stream.
+        """
+        for path in glob.glob("/sys/devices/*/usb[0-9]*/[0-9]*-[0-9]*/idVendor"):
+            try:
+                with open(path) as f:
+                    vendor = f.read().strip()
+                if vendor != "534d":
+                    continue
+                prod_path = path.replace("idVendor", "idProduct")
+                with open(prod_path) as f:
+                    product = f.read().strip()
+                if product != "2109":
+                    continue
+                ctrl_path = path.replace("idVendor", "power/control")
+                with open(ctrl_path) as f:
+                    current = f.read().strip()
+                if current != "on":
+                    with open(ctrl_path, "w") as f:
+                        f.write("on")
+                    logger.info(f"MS2109 power/control: '{current}' -> 'on'")
+                return
+            except (OSError, PermissionError):
+                pass
+
     def grab_frame(self, retries: int = 3) -> Image.Image:
         """Capture a single RGB frame.
+
+        Re-initializes the VideoCapture on every call to guarantee a fresh
+        stream. The MS2109 stops delivering new frames after a few seconds
+        of idle (e.g. during 30s API calls), so re-using a persistent
+        VideoCapture returns stale buffers. Closing and re-opening forces
+        the UVC driver to restart the isochronous transfer.
 
         Args:
             retries: Number of retry attempts on failure.
@@ -115,14 +176,33 @@ class UvcCapture:
         Raises:
             UvcError: If all retries fail.
         """
-        self._init_backend()
+        t0 = time.perf_counter()
+        self._wake_ms2109()
+
+        # Release previous instance — MS2109 stops streaming during long
+        # idle gaps; a fresh open guarantees current frames.
+        if self._cap is not None:
+            self._cap.release()
+            self._cap = None
+            logger.debug("Released previous OpenCV capture")
+
+        # Force re-initialization of the backend
+        saved_backend = self._backend
+        self._backend = None
+        if not self._init_backend():
+            self._backend = saved_backend  # restore on failure
+            raise UvcError("Failed to re-initialize capture backend")
 
         if self._backend == "opencv":
-            return self._grab_opencv(retries)
+            img = self._grab_opencv(retries)
         elif self._backend == "v4l2":
-            return self._grab_v4l2(retries)
+            img = self._grab_v4l2(retries)
         else:
-            return self._grab_ffmpeg(retries)
+            img = self._grab_ffmpeg(retries)
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        logger.debug(f"grab_frame total: {elapsed_ms:.0f}ms")
+        return img
 
     def _grab_opencv(self, retries: int) -> Image.Image:
         last_error = None
@@ -134,6 +214,24 @@ class UvcCapture:
                     logger.warning(f"Capture attempt {attempt + 1}/{retries}: {last_error}")
                     time.sleep(0.3)
                     continue
+
+                self._frame_count += 1
+                frame_mean = float(frame.mean())
+                frame_std = float(frame.std())
+                frame_hash = hashlib.md5(frame.tobytes()).hexdigest()[:8]
+
+                # Compare with previous frame
+                delta_str = ""
+                if self._last_mean is not None:
+                    delta = abs(frame_mean - self._last_mean)
+                    delta_str = f", Δmean={delta:.2f}"
+                self._last_mean = frame_mean
+
+                logger.info(
+                    f"Captured frame #{self._frame_count}: "
+                    f"shape={frame.shape}, mean={frame_mean:.1f}, std={frame_std:.1f}, "
+                    f"hash={frame_hash}{delta_str}"
+                )
 
                 # frame is BGR numpy array, convert to PIL RGB
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)

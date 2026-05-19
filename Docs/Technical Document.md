@@ -1,107 +1,122 @@
-This document aims to provide an overview of Victrl's software implementation path.
+# Victrl
 
-## Overall Architecture:
+> [[中文](技术文档.md)|English]
+
+This document describes Victrl's software implementation.
+
+## Overall Architecture
 
 ```mermaid
 graph TD
-    subgraph "Target Device (Any OS)"
+    subgraph "Target Device"
         Screen[Screen Display]
-        HID_Target[Receives HID Input]
+        HID_Target[Receive HID Input Bluetooth / USB HID]
     end
 
-    subgraph "Victrl Hardware (RK3566 + Armbian)"
+    subgraph "Victrl Host"
         subgraph "Image Input Layer"
-            UVC[UVC Capture Card<br>V4L2]
-            Preproc[Image Preprocessing]
+            UVC[UVC Capture Card /dev/video0]
+            Capture[UvcCapture OpenCV / V4L2 / ffmpeg]
         end
 
         subgraph "Agent Decision Layer"
-            Memory[Three-Layer Memory System]
-            Plan[Plan Management<br>JSON File]
-            Profile[Device Profile<br>Markdown]
-            CloudClient[Cloud Model Client<br>HTTP + JSON]
-            StateMachine[Main Loop Controller<br>State Machine]
-            HTTPServer[HTTP API Service<br>Flask :8080]
+            Agent[Main Loop Controller agent.py]
+            CloudClient[Cloud Model Client Ark SDK]
+            Memory[Three-Layer Memory System L1 History / L2 Plan / L3 Profile]
+            HTTPServer[HTTP API Service Flask :8080]
         end
 
         subgraph "HID Output Layer"
-            Uinput[Linux uinput<br>Virtual Keyboard/Mouse]
-            HID_Exec[HID Action Executor<br>Coordinate Mapping -> Event Injection]
+            SerialBridge[Serial HID Bridge serial_hid.py]
+            ESP32[ESP32 Firmware BLE HID Keyboard+Mouse]
+            Uinput[Linux uinput Virtual HID Fallback]
         end
     end
 
     subgraph "Cloud Services"
-        VLM[Multimodal Large Model]
+        VLM[Multimodal LLM Doubao / GPT / Claude]
     end
 
-    %% Data Flow
-    Screen -->|HDMI Capture| UVC
-    UVC -->|Raw Frame| Preproc
-    Preproc -->|JPEG Image| CloudClient
-    CloudClient -->|Image + Context Request| VLM
-    VLM -->|JSON Action Instruction| CloudClient
-    CloudClient -->|Action + Memory Update| StateMachine
-    StateMachine -->|Read/Write| Plan
-    StateMachine -->|Read/Append| Profile
-    StateMachine -->|History Summary| Memory
-    Memory -.->|L1 Short-term Memory| StateMachine
-    StateMachine -->|Execute Action| HID_Exec
-    HID_Exec -->|Send Event| Uinput
-    Uinput -->|USB HID| HID_Target
+    %% Main Data Flow
+    Screen -->|HDMI| UVC
+    UVC -->|V4L2 Frames| Capture
+    Capture -->|PIL Image| Agent
+    Agent -->|Screenshot + Context| CloudClient
+    CloudClient -->|API Request| VLM
+    VLM -->|JSON Action| CloudClient
+    CloudClient -->|Parsed Action| Agent
+    Agent -->|Read/Write| Memory
+    Agent -->|Execute Action| SerialBridge
+    SerialBridge -->|UART 115200| ESP32
+    ESP32 -->|BLE HID| HID_Target
+    Agent -.->|Fallback Path| Uinput
+    Uinput -.->|USB OTG| HID_Target
 
     %% Auxiliary Flow
-    HTTPServer -.->|Control/Status Query| StateMachine
-    StateMachine -.->|Log| Log[Log File]
+    HTTPServer -.->|Control/Query| Agent
 ```
 
 Data flow summary:
 
-1. Capture the target device's HDMI output via a USB capture card
-2. Send the image (optional) along with the current task context to the multimodal model
-3. The model returns a JSON instruction
-4. The local HID executor simulates keyboard/mouse events
-5. Loop until the task is completed or manually stopped
+1. USB capture card captures the target device's screen via HDMI
+2. Agent assembles the screenshot with current task context (device profile, plan, history) and sends to the multimodal model
+3. Model returns a JSON action instruction containing action type, coordinates, self-evaluation, plan updates, etc.
+4. Agent parses the action and executes keyboard/mouse operations via ESP32 BLE HID (primary) or Linux uinput (fallback)
+5. Waits for sufficient rendering time, then re-captures the screen — loop until task completion
 
-### Image Input Layer:
+---
 
-Responsibility: Capture the screen display from the target device and convert it into a format suitable for AI analysis.
+## Image Input Layer
 
-### Agent Layer:
+Responsibility: Capture screen display from the target device. Implemented in `core/uvc_capture.py`.
 
-Responsibility: Core intelligent agent — manages memory, calls models, parses actions, and maintains task plans.
+### Capture Backend Priority
 
-#### Element Normalized Coordinate Acquisition Test
+1. **OpenCV V4L2** (primary) — handles MS2109 capture card edge cases thoroughly
+2. **Pure Python V4L2** (fallback) — stdlib ioctl/mmap only, zero additional dependencies
+3. **ffmpeg** (last resort) — subprocess JPEG snapshot
 
-Doubao-seed-2.0-mini is the primary model for this MVP system. Multimodal large models inherently possess precise visual localization capabilities; inaccurate coordinate localization is typically caused by mismatches in question format, coordinate order, normalization range, or model training data conventions.
+### MS2109 Capture Card Notes
 
-For example, Qwen2.5-VL uses the following object detection JSON:
+MS2109 is Victrl's primary capture chip. Known issues:
 
-```Plain
-{"bbox_2d": [x1, y1, x2, y2], "label": "", "sub_label": ""}
+- **USB Auto-Suspend**: Suspends after 2 seconds of idle. After wake-up, it outputs a color bar test pattern instead of the live feed. Requires a udev rule to set `power/control` to `on`.
+- **VIDIOC_G_INPUT not supported**: MS2109 does not implement this ioctl, causing ffmpeg initialization to fail. The OpenCV backend skips this call.
+- **MJPEG only**: At 1080p, only MJPEG format is output; YUYV is not supported.
+- **Reopen VideoCapture each step**: LLM API calls take ~30 seconds, during which MS2109 stops isochronous transfers. Reusing an old VideoCapture handle returns stale frames. `grab_frame()` releases and rebuilds the VideoCapture on each step to ensure real-time frames.
+
+---
+
+## Agent Decision Layer
+
+Responsibility: Core intelligent agent — manages memory, calls models, parses actions, and maintains task plans. Implemented in `core/agent.py`.
+
+### Element Normalized Coordinates
+
+Model output coordinates uniformly use the normalized format `[ymin, xmin, ymax, xmax]`, range 0~1, accurate to 3 decimal places.
+
+For the doubao-seed model family, the Grounding prompt is:
+
 ```
-
-> Reference: https://qwen.ai/blog?id=qwen2.5-vl
-
-For doubao-seed-2.0-mini, the Grounding prompt is:
-
-```Plain
 Locate the "" in the image. Output strictly JSON format only, no extra explanation.
 Use format: {"box_2d": [ymin, xmin, ymax, xmax], "label": ""}
 All coordinates are normalized to 0-1 range and accurate to three decimal places.
 ```
 
-Assuming the original image pixel dimensions are: width `W` (horizontal, corresponding to the x-axis), height `H` (vertical, corresponding to the y-axis). The output coordinates are values normalized to the 0–1 range. The meaning and conversion formula for each parameter are:
+Assuming the original image pixel dimensions are width `W` (x-axis), height `H` (y-axis):
 
-| Parameter | Meaning (boundary position of the box)                          | Corresponding Pixel Coordinate Formula | Corresponding Image Direction    |
-| --------- | --------------------------------------------------------------- | -------------------------------------- | -------------------------------- |
-| ymin      | Top edge of the box (minimum vertical value, the topmost point) | ymin_pixel = ymin × H                  | Vertical (related to image H)    |
-| xmin      | Left edge of the box (minimum horizontal value, the leftmost)   | xmin_pixel = xmin × W                  | Horizontal (related to image W)  |
-| ymax      | Bottom edge of the box (maximum vertical value, the bottom)     | ymax_pixel = ymax × H                  | Vertical (related to image H)    |
-| xmax      | Right edge of the box (maximum horizontal value, the rightmost) | xmax_pixel = xmax × W                  | Horizontal (related to image W)  |
+| Parameter | Meaning | Pixel Conversion |
+| --------- | ------- | ---------------- |
+| ymin      | Box top edge (min vertical) | `ymin × H` |
+| xmin      | Box left edge (min horizontal) | `xmin × W` |
+| ymax      | Box bottom edge (max vertical) | `ymax × H` |
+| xmax      | Box right edge (max horizontal) | `xmax × W` |
+
+> Reference: https://qwen.ai/blog?id=qwen2.5-vl
 
 Below is a pseudocode example of object detection and bounding box parsing:
 
-```Python
+```python
 # 1. Encode image to Base64
 def encode_image_to_base64(image_path):
     # Read image binary data
@@ -146,82 +161,151 @@ Processed image examples:
 
 > User prompt: "Where should I click if I want to find photography works?"
 
-#### Main Process
+### Main Loop
 
-Victrl MVP relies entirely on a single multimodal model to make all decisions — from task recognition and planning to step-by-step execution. The main process is only responsible for: capturing images as requested by the model → calling the model → parsing JSON → executing actions → repeating. The model autonomously decides whether it needs to look at the screen for each step and what `action` to take, while maintaining an updatable `yyyyMMddHHmmss-plan` to track progress.
+Victrl relies entirely on a single multimodal model to handle all decisions — from task recognition and planning to step-by-step execution. The main process is responsible for:
 
-The loop does not use a fixed time interval; instead, it either runs back-to-back or lets the model autonomously specify the wait duration.
-
-Below is a pseudocode example of the main process:
-
-```Python
-def run():
-    plan = None
-    history = []
-    need_screen = True   # Must see screen on first iteration
-    
-    while True:
-        # 1. Decide whether to capture based on need_screen
-        image_b64 = capture_and_encode() if need_screen else None
-        
-        # 2. Call the model
-        response = call_model(image=image_b64, plan=plan, history=history[-5:])
-        
-        # 3. Execute action
-        if response.action_type == "click":
-            x,y = bbox_to_center(response.box_2d, screen_width, screen_height)
-            mouse_click(x,y)
-        elif response.action_type == "type":
-            keyboard_type(response.text)
-        elif response.action_type == "wait":
-            time.sleep(response.wait_seconds)
-        elif response.action_type == "complete" or response.done:
-            print("Task completed")
-            break
-        elif response.action_type == "error":
-            print("Error:", response.message)
-            break
-        
-        # 4. Record history
-        history.append({"action": response.action_type, "result": "success"})
-        
-        # 5. Update plan
-        plan = response.plan_update
-        
-        # 6. Handle profile_updates    
-        self._append_to_profile(upd.get("content", ""))
-            
-        # 7. Set whether screen is needed for next round
-        need_screen = response.need_screen
-        
-        # 8. Optional throttling
-        time.sleep(0.5)   # Allow UI to settle
+```
+Capture image → Call model → Parse JSON → Execute action → Wait for render → Repeat
 ```
 
-The JSON action set output by the model (partial):
+The model autonomously decides whether it needs to look at the screen for each step (`need_screen`), and specifies the wait time after action execution (`sleep_before_next`) to accommodate rendering delays for different operations.
 
-| action_type | Description                              | Example Fields                   |
-| ----------- | ---------------------------------------- | -------------------------------- |
-| `click`     | Left-click at normalized coordinate area | `box_2d: [ymin,xmin,ymax,xmax]` |
-| `move`      | Move mouse to specified area             | `box_2d`                         |
-| `type`      | Input a string                           | `text: "Hello"`                  |
-| `press`     | Press a key combination                  | `keys: ["ctrl","c"]`             |
-| `scroll`    | Scroll                                   | `delta_x, delta_y`               |
-| `wait`      | Wait for a number of seconds             | `seconds: 1.5`                   |
-| `complete`  | Task completed successfully              | -                                |
-| `error`     | Task failed with a reason                | `message`                        |
+Current main loop implementation (simplified):
 
-The model can also control whether an image is needed in the next round via `need_screen`, and adjust the wait time after an action via `sleep_before_next`, enabling an efficient, adaptive loop.
+```python
+while self.action_count < max_actions and not stop:
+    # 1. Capture screen (reopen VideoCapture each step for real-time frame)
+    if need_screen:
+        img = self.capture.grab_frame()
 
-### HID Output Layer:
+    # 2. Assemble context and call model
+    response = self.cloud.query(
+        image=img,
+        plan=self.plan,
+        history=self.memory.get_recent(),
+        profile_text=self.profile,
+        last_summary=self.last_summary,
+    )
 
-Responsibility: Convert the abstract actions decided by the Agent into real keyboard/mouse events and inject them into the target computer.
+    # 3. Parse action
+    action = response["action_type"]
+    sleep_before = response.get("sleep_before_next", 0.5)
 
-For 99% of desktop GUI automation tasks, HID emulation is fully sufficient. However, there are indeed a few edge cases that require special design.
+    # 4. Execute action
+    if action == "click":
+        x, y = bbox_center(response["box_2d"])
+        self.hid.mouse_click(x, y)
+    elif action == "type":
+        self.hid.type_string(response["text"])
+    elif action == "press":
+        self.hid.key_press(response["key"])
+    # ... scroll, drag, wait, release, etc.
 
-Execution flow:
+    # 5. Wait for target device to render
+    time.sleep(max(sleep_before, 0.05))
 
-1. The Agent outputs a `click` action with normalized coordinates `[ymin, xmin, ymax, xmax]`
-2. The HID layer maps the coordinates to screen pixels (`x = (xmin+xmax)/2 * screen_width`)
-3. Move the mouse to the target point, send `BTN_LEFT` press/release events
-4. Return the execution result
+    # 6. Update memory (L1 history + L2 plan + L3 profile)
+    self.last_summary = response["plan_update"]["summary"]
+    self.memory.add(response)
+    self.plan = response["plan_update"]
+
+    # 7. Check completion
+    if response.get("done"):
+        break
+
+    need_screen = response.get("need_screen", True)
+```
+
+Each step's flow:
+
+```
+① Capture screen — Reopen VideoCapture for real-time frame (prevents MS2109 returning old frames after extended idle)
+② Assemble context — System prompt + device profile + current milestone + recent history + screenshot
+③ Call LLM — Model analyzes the screen, outputs JSON action instruction
+④ Execute action — Parse action_type: click / type / press / scroll / drag / wait
+⑤ Wait for render — sleep_before_next gives the target device enough time to react, preventing stale frames
+⑥ Update memory — Action summary → L1, milestones → L2, new discoveries → L3
+⑦ Check completion — When done=true, model must verify by capture to confirm goal achieved before exiting
+```
+
+### Model Response Format
+
+Each step returns a complete JSON (current schema, defined in `SYSTEM_PROMPT` of `core/cloud_client.py`):
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `action_type` | string | click / move / drag / scroll / press / type / wait / release / complete / error |
+| `box_2d` | [float×4] | Normalized coordinates [ymin, xmin, ymax, xmax], 3 decimal places |
+| `from_box` / `to_box` | [float×4] | Start and end coordinates for drag actions |
+| `button` | string | left / right / middle / double_left |
+| `key` | string | Key combination, e.g. `ctrl+c`, `win+r`, joined with + |
+| `text` | string | Text to input |
+| `delta_x` / `delta_y` | int | Scroll amount |
+| `wait_seconds` | float | Wait duration for wait action |
+| `need_screen` | bool | Whether screen capture is needed for the next step |
+| `sleep_before_next` | float | Wait time after this action (for target device rendering) |
+| `observation` | string | What is currently seen on screen |
+| `self_evaluation` | string | Whether the previous action achieved the expected result (required) |
+| `plan_update` | object | Plan update (summary + milestones) |
+| `profile_updates` | []object | New device knowledge discovered (appended to L3 profile) |
+| `done` | bool | Whether the task is complete |
+| `verification` | string | Evidence of completion when done=true |
+| `message` | string | Explanation when completing or erroring |
+
+Key design points:
+
+- **Milestones, not steps**: The plan describes *what* to do; the model decides *how* based on what it sees on screen
+- **observation / self_evaluation required**: Forces the model to describe what it sees and self-assess, preventing blind plan-following
+- **verification required**: When done:true, must list completion evidence based on the latest screenshot
+
+### Memory System
+
+| Layer | Storage | File | Lifespan |
+|-------|---------|------|----------|
+| L1 Short-term | In-memory list | `memory/short_term.py` | Single task, keeps last N entries |
+| L2 Plan | JSON file | `memory/plan_manager.py` | Single task, includes milestones, interruptible/resumable |
+| L3 Profile | Markdown file | `memory/profile_manager.py` | Cross-task accumulation, records UI element positions, shortcuts, experience |
+
+---
+
+## HID Output Layer
+
+Responsibility: Convert abstract actions decided by the Agent into real keyboard/mouse events and inject them into the target device.
+
+Victrl supports two HID backends:
+
+### Serial → ESP32 → BLE HID
+
+Path: `serial_hid.py → UART → ESP32 → BLE HID → Target Device`
+
+- Serial protocol at 115200 baud, one command per line
+- ESP32 firmware `esp32_hid/esp32_hid.ino`, uses ESP32 built-in BLE libraries
+- The target device searches for and pairs with "Victrl HID" via Bluetooth — after pairing, it appears as a standard Bluetooth keyboard + mouse
+- Command format: `M x y` (mouse move), `C button` (click), `K combo` (key combo), `T base64` (text input), `S dx dy` (scroll), `R` (release)
+
+Known constraints:
+- Typing speed must not exceed ~40 chars/s (25ms/char), otherwise BLE GATT drops packets
+- IME may intercept English character input as pinyin — the model has been instructed to be aware of this and adaptively switch
+
+### Linux uinput
+
+Path: `hid_controller.py → /dev/uinput → USB OTG → Target Device`
+
+- Creates virtual keyboard/mouse devices via the Linux uinput subsystem
+- Requires `sudo modprobe uinput`
+- Connects directly to the target device via USB OTG cable
+
+---
+
+## HTTP API
+
+Flask service listening on `127.0.0.1:8080` (`api/server.py`):
+
+| Endpoint | Method | Description |
+| -------- | ------ | ----------- |
+| `/status` | GET | Returns current task status, action count, plan summary |
+| `/start` | POST | Start a new task `{"task": "..."}` |
+| `/stop` | POST | Stop the current task |
+| `/profile` | GET | View device profile |
+| `/plan` | GET | View current task plan |

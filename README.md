@@ -47,57 +47,56 @@ Victrl uses a **single** hardware device — **pure hardware, pure peripheral** 
 
 ```mermaid
 graph TD
-    subgraph "Target Device (Any OS)"
+    subgraph "Target Device"
         Screen[Screen Display]
-        HID_Target[Receives HID Input]
+        HID_Target[Receive HID Input Bluetooth / USB HID]
     end
 
-    subgraph "Victrl Hardware (RK3566 + Armbian)"
+    subgraph "Victrl Host"
         subgraph "Image Input Layer"
-            UVC[UVC Capture Card<br>V4L2]
-            Preproc[Image Preprocessing]
+            UVC[UVC Capture Card /dev/video0]
+            Capture[UvcCapture OpenCV / V4L2 / ffmpeg]
         end
 
         subgraph "Agent Decision Layer"
-            Memory[Three-Layer Memory System]
-            Plan[Plan Management<br>JSON File]
-            Profile[Device Profile<br>Markdown]
-            CloudClient[Cloud Model Client<br>HTTP + JSON]
-            StateMachine[Main Loop Controller<br>State Machine]
-            HTTPServer[HTTP API Service<br>Flask :8080]
+            Agent[Main Loop Controller agent.py]
+            CloudClient[Cloud Model Client Ark SDK]
+            Memory[Three-Layer Memory System L1 History / L2 Plan / L3 Profile]
+            HTTPServer[HTTP API Service Flask :8080]
         end
 
         subgraph "HID Output Layer"
-            Uinput[Linux uinput<br>Virtual Keyboard/Mouse]
-            HID_Exec[HID Action Executor<br>Coordinate Mapping -> Event Injection]
+            SerialBridge[Serial HID Bridge serial_hid.py]
+            ESP32[ESP32 Firmware BLE HID Keyboard+Mouse]
+            Uinput[Linux uinput Virtual HID Fallback]
         end
     end
 
     subgraph "Cloud Services"
-        VLM[Multimodal Large Model]
+        VLM[Multimodal LLM Doubao / GPT / Claude]
     end
 
-    %% Data Flow
-    Screen -->|HDMI Capture| UVC
-    UVC -->|Raw Frame| Preproc
-    Preproc -->|JPEG Image| CloudClient
-    CloudClient -->|Image + Context Request| VLM
-    VLM -->|JSON Action Instruction| CloudClient
-    CloudClient -->|Action + Memory Update| StateMachine
-    StateMachine -->|Read/Write| Plan
-    StateMachine -->|Read/Append| Profile
-    StateMachine -->|History Summary| Memory
-    Memory -.->|L1 Short-term Memory| StateMachine
-    StateMachine -->|Execute Action| HID_Exec
-    HID_Exec -->|Send Event| Uinput
-    Uinput -->|USB HID| HID_Target
+    %% Main Data Flow
+    Screen -->|HDMI| UVC
+    UVC -->|V4L2 Frames| Capture
+    Capture -->|PIL Image| Agent
+    Agent -->|Screenshot + Context| CloudClient
+    CloudClient -->|API Request| VLM
+    VLM -->|JSON Action| CloudClient
+    CloudClient -->|Parsed Action| Agent
+    Agent -->|Read/Write| Memory
+    Agent -->|Execute Action| SerialBridge
+    SerialBridge -->|UART 115200| ESP32
+    ESP32 -->|BLE HID| HID_Target
+    Agent -.->|Fallback Path| Uinput
+    Uinput -.->|USB OTG| HID_Target
 
     %% Auxiliary Flow
-    HTTPServer -.->|Control/Status Query| StateMachine
-    StateMachine -.->|Log| Log[Log File]
+    HTTPServer -.->|Control/Query| Agent
 ```
 
 Data flow summary:
+
 1. Capture the target device's HDMI output via a USB capture card
 2. Send the image (optional) along with the current task context to the multimodal model
 3. The model returns a JSON instruction
@@ -122,6 +121,7 @@ The following capabilities are only reserved in the architecture for this versio
 - **Exploration Mode**: The model actively scans the screen, discovers elements, and records them into memory
 - **Categorized Long-Term Memory**: Splitting a single document into multiple sub-documents indexed by category
 - **Visual Interface**: The device will integrate a small LCD screen and function buttons for better interaction
+- **Efficiency Optimization**: Lower context consumption and faster decision-making
 
 ------
 

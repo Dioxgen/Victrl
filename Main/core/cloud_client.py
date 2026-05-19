@@ -1,4 +1,4 @@
-"""Cloud model client for calling multimodal LLM APIs."""
+"""Cloud model client for calling multimodal LLM APIs via Volces Ark Responses API."""
 
 import base64
 import io
@@ -6,25 +6,24 @@ import json
 import logging
 import time
 
-import requests
 from PIL import Image
+from volcenginesdkarkruntime import Ark
 
 from config import API_MAX_RETRIES, API_TIMEOUT
-from utils.exceptions import CloudAPIError
 
 logger = logging.getLogger("victrl.cloud")
 
 SYSTEM_PROMPT = """You are Victrl, a hardware AI agent controlling a computer via HID. You see the screen via UVC. Your task is to fulfill the user's goal by outputting JSON actions.
 
-**Device Profile (natural language, provided below):**
+**Device Profile:**
 {device_profile_text}
 
-**Hardware Status (dynamic):**
-- UVC capture: OK
-- HID device: active
-- Currently pressed buttons: {pressed_buttons}
+**Pressed buttons:** {pressed_buttons}
 
-**Your output must be a JSON object with the following schema:**
+**Your last action and expected outcome:**
+{last_summary}
+
+**Your output must be a JSON object:**
 {{
   "action_type": "click|move|drag|scroll|press|type|wait|release|complete|error",
   "box_2d": [ymin, xmin, ymax, xmax],
@@ -34,15 +33,16 @@ SYSTEM_PROMPT = """You are Victrl, a hardware AI agent controlling a computer vi
   "hold": int,
   "delta_y": int,
   "delta_x": int,
-  "key": "string",
+  "key": "combo separated by + (e.g. win+r, ctrl+c, ctrl+shift+esc) — NEVER use spaces",
   "text": "string",
   "wait_seconds": float,
   "message": "string",
   "need_screen": bool,
   "sleep_before_next": float,
   "observation": "string",
+  "self_evaluation": "string",
   "plan_update": {{
-    "summary": "Brief description of current state and what you're doing",
+    "summary": "What I did this step + what I expected + whether it worked",
     "current_milestone": int,
     "milestones": [{{"id": int, "description": "high-level sub-goal, NOT a specific UI action", "status": "pending|in_progress|done"}}]
   }},
@@ -51,42 +51,72 @@ SYSTEM_PROMPT = """You are Victrl, a hardware AI agent controlling a computer vi
   "verification": "string"
 }}
 
-**Core Principles:**
+─── CRITICAL RULES (violating these causes task failure) ───
 
-1. SCREEN IS GROUND TRUTH. The screen shows reality. If the plan says "Notepad is open" but the screen shows an error dialog or empty desktop, BELIEVE YOUR EYES not the plan. Adapt immediately.
+1. LOOK BEFORE YOU LEAP.
+   - If you do NOT have a current screen image, set need_screen: true and output a wait action. NEVER guess.
+   - After EVERY state-changing action (click, press, type, drag), you MUST set need_screen: true so the next step verifies the result. Only skip the screen for pure wait/scroll actions where the outcome is predictable.
 
-2. PLAN IS A COMPASS, NOT A SCRIPT. The milestones describe WHAT to achieve (high-level sub-goals), not HOW to do it. You decide the specific clicks, keys, and timing based on what you see on screen RIGHT NOW. If a milestone was marked "done" but the screen shows it failed, re-open it.
+   ⚠️ CRITICAL — LEAVE TIME FOR THE COMPUTER TO REACT:
+   - The screen is captured IMMEDIATELY after your sleep_before_next expires. If the computer hasn't finished rendering, you will see a STALE screen and wrongly conclude your action failed.
+   - Set sleep_before_next based on what you just did:
+     * click (menu, button):          0.3 – 0.5s
+     * press (keyboard shortcut):     0.3 – 0.8s
+     * press (launching an app):      1.0 – 2.0s
+     * type (short text <20 chars):   0.2 – 0.4s
+     * type (longer text):            0.4 – 0.8s
+     * drag:                          0.3 – 0.5s
+     * wait / scroll:                 0.1 – 0.3s  (predictable outcome, fine to skip screen)
+   - If the screen shows your action had NO effect, FIRST consider: "was the screen captured too early?" Before declaring failure, try the same action with a LONGER sleep_before_next. Only conclude the action truly failed after a second attempt with adequate delay.
 
-3. THINK BEFORE ACTING. Use the "observation" field to describe what you see on screen: which windows are open, what's selected, any error messages, and why you chose this action. This is your situational awareness log.
+2. ⚠️ WATCH FOR INPUT METHOD (IME) CORRUPTION.
+   - If the target system has a non-English IME active (e.g. Chinese 输入法), typing English produces garbled text (pinyin interpretation, full-width punctuation).
+   - After a "type" action, VERIFY the text on screen matches what you intended. If characters are wrong, wrong-width, or missing: suspect IME interference.
+   - Common fixes: toggle input mode (Win+Space, Alt+Shift, Ctrl+Shift), press Esc to cancel IME composition, or use Ctrl+Space. Adapt based on what you see on screen.
 
-4. VERIFY COMPLETION. When you believe the task is done, you MUST set need_screen: true to get a fresh screen capture, then examine it carefully. Only output done: true after you have seen visual confirmation that the goal is achieved. Include a "verification" field explaining exactly what elements on screen prove success. If verification fails, continue with corrective actions.
+3. SELF-EVALUATE EVERY STEP.
+   - The "self_evaluation" field is REQUIRED. Compare: did my last action produce the expected result?
+   - If the screen shows your last action FAILED (wrong window, no response, unexpected dialog): DO NOT repeat the same action. Diagnose the problem and try a different approach.
+   - The "summary" in plan_update must describe: (a) what you just did, (b) what you expected, (c) whether the screen confirmed it worked.
 
-5. USE PROFILE UPDATES. Every time you discover a UI element location, shortcut, or behavioral pattern, record it. This knowledge persists across tasks.
+4. DETECT AND BREAK LOOPS.
+   - If you have performed 3+ similar actions with NO visible progress toward the goal, you are STUCK. Do NOT try the same thing again. Step back, re-examine the screen, and formulate a completely different strategy.
+   - Examples of being stuck: clicking the same area repeatedly, typing the same text multiple times, pressing the same key combo that isn't working.
+   - When stuck: mark the current milestone as "blocked", add a new milestone describing the recovery approach, and EXPLICITLY state in self_evaluation what went wrong.
 
-**Rules:**
+5. SCREEN IS THE ONLY TRUTH.
+   - The plan is a compass, not a script. If the screen contradicts the plan, BELIEVE THE SCREEN.
+   - If a milestone was marked "done" but the screen shows otherwise, revert it to "in_progress" or "blocked".
+   - Never skip need_screen just because the plan says something should have happened.
+
+6. VERIFY COMPLETION RIGOROUSLY.
+   - Before outputting done: true, you MUST have a fresh screen capture showing the final state.
+   - The "verification" field must list specific UI elements visible on screen that prove success.
+   - If ANY part of the goal is unconfirmed, continue with corrective actions instead of declaring done.
+
+─── STANDARD RULES ───
 - Coordinates normalized [0,1], 3 decimal places.
-- hold: -1 keeps button pressed; later use release.
-- Provide sleep_before_next >0 when need_screen: false to avoid CPU waste.
-- Always fill the "observation" field — what do you see, and why this action?
-- Update plan_update every response. Milestones describe sub-goals (e.g. "Open the target application"), NOT specific clicks (e.g. "Click Start menu").
-- When task complete, output action_type: "complete", done: true, with a non-empty "verification" field.
-- For unrecoverable error, output action_type: "error", done: true.
+- Always fill "observation" (what you see on screen right now) and "self_evaluation" (did last action work?).
+- Always set sleep_before_next — never leave it at 0 after state-changing actions. The host enforces a 0.5s minimum for click/press/type/drag, but you should set LONGER delays for slow operations (app launch, dialog open, page load).
+- Milestones describe sub-goals (e.g. "Open the target application"), NOT specific clicks.
+- For unrecoverable error, action_type: "error", done: true.
+- Use profile_updates to record UI locations and shortcuts you discover.
 """
 
-REQUIRED_FIELDS = {"action_type", "plan_update", "done"}
+REQUIRED_FIELDS = {"action_type", "plan_update"}
 
 # ── Mock responses for dry-run ──────────────────────────────────────────
-_MOCK_STEP = 0
 _MOCK_RESPONSES = [
     {
         "action_type": "click",
         "box_2d": [0.10, 0.50, 0.15, 0.55],
         "button": "left",
         "need_screen": True,
-        "sleep_before_next": 0.3,
-        "observation": "Desktop visible with taskbar at bottom. Start button in lower-left corner.",
+        "sleep_before_next": 0.5,
+        "observation": "Desktop visible with taskbar at bottom. Start button in lower-left corner. No windows open.",
+        "self_evaluation": "First action — no prior action to evaluate. Start menu should appear after this click.",
         "plan_update": {
-            "summary": "Clicking Start button to begin opening the application",
+            "summary": "Clicked Windows Start button. Expected: Start menu opens with search field visible. Will verify next step.",
             "current_milestone": 1,
             "milestones": [
                 {"id": 1, "description": "Open the target application", "status": "in_progress"},
@@ -101,9 +131,10 @@ _MOCK_RESPONSES = [
         "text": "notepad",
         "need_screen": True,
         "sleep_before_next": 0.2,
-        "observation": "Start menu opened, search field is focused and ready for input.",
+        "observation": "Start menu is open. Search field is focused with cursor blinking. Ready for text input.",
+        "self_evaluation": "Previous click succeeded — Start menu opened as expected. Now typing the app name.",
         "plan_update": {
-            "summary": "Typing application name into Start search",
+            "summary": "Typed 'notepad' into Start search. Expected: Notepad appears as top result. Will verify with screen capture.",
             "current_milestone": 1,
             "milestones": [
                 {"id": 1, "description": "Open the target application", "status": "in_progress"},
@@ -118,9 +149,10 @@ _MOCK_RESPONSES = [
         "key": "enter",
         "need_screen": True,
         "sleep_before_next": 0.8,
-        "observation": "Notepad is the top search result, highlighted. Pressing Enter to launch.",
+        "observation": "Notepad is the top search result, highlighted. Search text 'notepad' is visible.",
+        "self_evaluation": "Typing worked — 'notepad' text appeared and search results are visible. Enter will launch it.",
         "plan_update": {
-            "summary": "Launching Notepad via Enter key",
+            "summary": "Pressed Enter to launch Notepad. Expected: Notepad window opens. Will verify after allowing launch time.",
             "current_milestone": 1,
             "milestones": [
                 {"id": 1, "description": "Open the target application", "status": "in_progress"},
@@ -135,9 +167,10 @@ _MOCK_RESPONSES = [
         "text": "Hello from Victrl!",
         "need_screen": True,
         "sleep_before_next": 0.1,
-        "observation": "Notepad window is open with a blank document. Cursor is flashing in the text area.",
+        "observation": "Notepad window is open and active. Title bar shows 'Untitled - Notepad'. Empty document with cursor blinking.",
+        "self_evaluation": "Enter key worked — Notepad launched successfully. Window is focused and ready for typing.",
         "plan_update": {
-            "summary": "Typing content into Notepad",
+            "summary": "Typing greeting text into Notepad. Expected: text appears in the editor. Will verify content on screen.",
             "current_milestone": 2,
             "milestones": [
                 {"id": 1, "description": "Open the target application", "status": "done"},
@@ -151,10 +184,11 @@ _MOCK_RESPONSES = [
         "action_type": "complete",
         "message": "Task completed successfully.",
         "need_screen": True,
-        "observation": "Notepad window shows the text 'Hello from Victrl!' in the editor area. Title bar confirms 'Untitled - Notepad'.",
-        "verification": "Notepad is open and contains the target text 'Hello from Victrl!'. The title bar and text content confirm success.",
+        "observation": "Notepad window active. Editor area shows 'Hello from Victrl!' text. Title bar: 'Untitled - Notepad'.",
+        "self_evaluation": "Text was typed and is visible in Notepad. All milestones are done. Screen confirms success.",
+        "verification": "Notepad title bar confirms the app is open. Editor area contains the target text 'Hello from Victrl!' clearly visible. All three milestones completed.",
         "plan_update": {
-            "summary": "Verified: Notepad is open with correct content. Task complete.",
+            "summary": "Task complete. Notepad launched, greeting typed, result verified on screen.",
             "current_milestone": 3,
             "milestones": [
                 {"id": 1, "description": "Open the target application", "status": "done"},
@@ -164,7 +198,8 @@ _MOCK_RESPONSES = [
         },
         "profile_updates": [
             {"content": "- Start menu opens via left-click on Windows icon at [0.10, 0.50, 0.15, 0.55]"},
-            {"content": "- Start search field auto-focuses when Start menu opens, accepts text input immediately"},
+            {"content": "- Start search field auto-focuses and accepts text input immediately after menu opens"},
+            {"content": "- Notepad launches within ~1 second after pressing Enter on search result"},
         ],
         "done": True,
     },
@@ -178,7 +213,7 @@ class MockCloudClient:
         self._step = 0
         logger.info("MockCloudClient initialized — no real API calls will be made")
 
-    def query(self, image=None, plan=None, history=None, system_prompt="", profile_text="") -> dict | None:
+    def query(self, image=None, plan=None, history=None, system_prompt="", profile_text="", last_summary="") -> dict | None:
         """Return the next canned response, cycling through the mock sequence."""
         idx = self._step
         self._step += 1
@@ -186,25 +221,23 @@ class MockCloudClient:
             idx = _MOCK_RESPONSES.index(
                 next(r for r in _MOCK_RESPONSES if r.get("done"))
             )
-        resp = _MOCK_RESPONSES[idx]
+        resp = dict(_MOCK_RESPONSES[idx])
+        resp.setdefault("_reasoning", "")
         logger.info(f"[MOCK] query #{idx}: action_type={resp.get('action_type')}")
         return resp
 
 
 class CloudClient:
-    """Client for calling multimodal LLM APIs."""
+    """Client for calling multimodal LLM APIs via Volces Ark Responses API."""
 
     def __init__(self, api_endpoint: str, api_key: str, model_name: str):
-        """Initialize cloud client.
-
-        Args:
-            api_endpoint: API base URL.
-            api_key: API key for authentication.
-            model_name: Model identifier.
-        """
         self.api_endpoint = api_endpoint.rstrip("/")
         self.api_key = api_key
         self.model_name = model_name
+        self._client = Ark(
+            base_url=self.api_endpoint,
+            api_key=self.api_key,
+        )
         logger.info(f"CloudClient initialized: endpoint={api_endpoint}, model={model_name}")
 
     def query(
@@ -214,119 +247,103 @@ class CloudClient:
         history: list,
         system_prompt: str,
         profile_text: str,
+        last_summary: str = "",
     ) -> dict | None:
         """Send a query to the model and parse the response.
 
-        Args:
-            image: Current screen capture (or None if not needed).
-            plan: Current plan dict.
-            history: List of recent action summaries.
-            system_prompt: Base system prompt template.
-            profile_text: Device profile content.
-
         Returns:
-            Parsed response dict, or None on failure.
+            Parsed response dict (with extra '_reasoning' and '_raw_content' keys),
+            or None on failure.
         """
-        system_content = system_prompt.format(
+        instructions = system_prompt.format(
             device_profile_text=profile_text,
             pressed_buttons="[]",
+            last_summary=last_summary or "(This is the first step — no prior action to evaluate.)",
         )
 
-        # Build user content
-        user_parts = []
         plan_summary = json.dumps(plan, ensure_ascii=False, indent=2) if plan else "No plan yet. Create one."
         history_text = "\n".join(history) if history else "No history yet."
 
-        user_parts.append({
-            "type": "text",
-            "text": (
-                f"Current plan:\n{plan_summary}\n\n"
-                f"Recent action history (last {len(history)}):\n{history_text}\n\n"
-                "Analyze the screen and output the next action as JSON."
-            ),
-        })
+        user_text = (
+            f"Current plan:\n{plan_summary}\n\n"
+            f"Recent action history (last {len(history)}):\n{history_text}\n\n"
+            f"TASK: Analyze the screen, evaluate whether your last action worked, "
+            f"and output the next action as JSON.\n"
+            f"Remember: fill self_evaluation (did the last action succeed?), "
+            f"and set need_screen: true after any click/press/type/drag."
+        )
+
+        content_blocks = [{"type": "input_text", "text": user_text}]
 
         if image is not None:
             buf = io.BytesIO()
             image.save(buf, format="JPEG", quality=85)
             img_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-            user_parts.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
+            content_blocks.append({
+                "type": "input_image",
+                "image_url": f"data:image/jpeg;base64,{img_b64}",
             })
 
-        payload = {
-            "model": self.model_name,
-            "messages": [
-                {"role": "system", "content": system_content},
-                {"role": "user", "content": user_parts},
-            ],
-            "temperature": 0.1,
-            "max_tokens": 4096,
+        user_message = {
+            "role": "user",
+            "content": content_blocks,
         }
 
         last_error = None
         for attempt in range(API_MAX_RETRIES + 1):
             try:
-                resp = requests.post(
-                    self.api_endpoint,
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
-                    timeout=API_TIMEOUT,
+                response = self._client.responses.create(
+                    model=self.model_name,
+                    instructions=instructions,
+                    input=[user_message],
+                    temperature=0.1,
+                    max_output_tokens=4096,
                 )
-                resp.raise_for_status()
-                data = resp.json()
 
-                # Extract assistant message content
-                content = data["choices"][0]["message"]["content"]
-                parsed = self._parse_response(content)
+                # Extract text content from response output
+                raw_content = ""
+                reasoning = ""
+                for item in response.output:
+                    if item.type == "reasoning":
+                        for s in item.summary:
+                            reasoning += s.text
+                    elif item.type == "message":
+                        for c in item.content:
+                            if c.type == "output_text":
+                                raw_content += c.text
 
+                parsed = self._parse_response(raw_content)
                 if parsed is not None:
+                    parsed["_reasoning"] = reasoning
+                    parsed["_raw_content"] = raw_content
                     return parsed
 
-                # If parsing failed, retry with stricter prompt
                 logger.warning(f"Response parse failed, attempt {attempt + 1}")
                 if attempt < API_MAX_RETRIES:
-                    user_parts.insert(0, {
-                        "type": "text",
-                        "text": "IMPORTANT: Your previous response was not valid JSON. "
-                                "Output ONLY a valid JSON object with the required schema. No other text.",
-                    })
+                    user_text = (
+                        "Your previous response was missing required fields "
+                        f"({', '.join(sorted(REQUIRED_FIELDS))}). "
+                        "Output a COMPLETE JSON object. All fields are required.\n\n"
+                    ) + user_text
+                    content_blocks[0]["text"] = user_text
                     time.sleep(1)
 
-            except requests.exceptions.Timeout:
-                last_error = "Request timed out"
-                logger.warning(f"Timeout on attempt {attempt + 1}")
-            except requests.exceptions.RequestException as e:
-                last_error = str(e)
-                logger.warning(f"API error on attempt {attempt + 1}: {e}")
-            except (KeyError, IndexError) as e:
-                last_error = f"Invalid response structure: {e}"
-                logger.error(last_error)
             except Exception as e:
                 last_error = str(e)
-                logger.error(f"Unexpected error: {e}")
-                break
+                logger.warning(f"API error on attempt {attempt + 1}: {e}")
+                if attempt < API_MAX_RETRIES:
+                    delay = min(2 ** attempt, 60)
+                    time.sleep(delay)
+                continue
 
         logger.error(f"All {API_MAX_RETRIES + 1} attempts failed. Last error: {last_error}")
         return None
 
     def _parse_response(self, content: str) -> dict | None:
-        """Parse JSON from model response.
-
-        Args:
-            content: Raw response text from the model.
-
-        Returns:
-            Parsed dict with validated fields, or None if invalid.
-        """
+        """Parse JSON from model response text."""
         if not content:
             return None
 
-        # Strip markdown code fences if present
         text = content.strip()
         if text.startswith("```"):
             lines = text.split("\n")
@@ -338,32 +355,30 @@ class CloudClient:
 
         try:
             data = json.loads(text)
-        except json.JSONDecodeError as e:
-            # Try to extract JSON from the text
+        except json.JSONDecodeError:
             start = text.find("{")
             end = text.rfind("}")
             if start != -1 and end != -1 and end > start:
                 try:
                     data = json.loads(text[start:end + 1])
                 except json.JSONDecodeError:
-                    logger.warning(f"JSON parse error: {e}")
+                    logger.warning(f"JSON parse error in response")
                     return None
             else:
-                logger.warning(f"JSON parse error: {e}")
+                logger.warning(f"No JSON object found in response")
                 return None
 
         if not isinstance(data, dict):
             return None
 
-        # Validate required fields
         missing = REQUIRED_FIELDS - set(data.keys())
         if missing:
             logger.warning(f"Response missing required fields: {missing}")
             return None
 
-        # Default values for common optional fields
         data.setdefault("need_screen", True)
         data.setdefault("sleep_before_next", 0.0)
         data.setdefault("button", "left")
+        data.setdefault("done", False)
 
         return data

@@ -20,6 +20,7 @@ from config import (
     DEFAULT_SCREEN_WIDTH,
     DEFAULT_SCREEN_HEIGHT,
     HISTORY_MAX_LEN,
+    LOG_DIR,
     MAX_ACTIONS,
     PLAN_DIR,
     PROFILE_DIR,
@@ -70,7 +71,7 @@ def parse_args() -> argparse.Namespace:
     # Paths
     parser.add_argument("--plan_dir", default=PLAN_DIR, help="Plan file directory")
     parser.add_argument("--profile_dir", default=PROFILE_DIR, help="Profile directory")
-    parser.add_argument("--log_file", default="/var/log/victrl/agent.log", help="Log file path")
+    parser.add_argument("--log_dir", default=LOG_DIR, help="Directory for per-task logs")
 
     # Limits
     parser.add_argument("--max_actions", type=int, default=MAX_ACTIONS,
@@ -106,7 +107,8 @@ def main() -> None:
     args = parse_args()
 
     # Setup logging
-    logger = setup_logging(debug=args.debug, log_file=args.log_file)
+    system_log = os.path.join(args.log_dir, "victrl.log")
+    logger = setup_logging(debug=args.debug, log_file=system_log)
     logger.info("Victrl starting...")
 
     # Check system prerequisites
@@ -135,6 +137,7 @@ def main() -> None:
         max_actions=args.max_actions,
         plan_dir=args.plan_dir,
         profile_dir=args.profile_dir,
+        log_dir=args.log_dir,
         history_max_len=args.history_max_len,
         dry_run=args.dry_run,
         hid_backend=args.hid_backend,

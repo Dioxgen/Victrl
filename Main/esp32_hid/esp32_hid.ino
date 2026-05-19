@@ -12,6 +12,8 @@
  *   K <combo>         key press  (e.g. "ctrl+c", "enter")
  *   T <b64>           type string (base64-encoded)
  *   R                 release all
+ *   Z <w> <h>         set screen resolution (pixels)
+ *   W <ms>            wait milliseconds
  */
 
 #include <BLEDevice.h>
@@ -25,8 +27,8 @@
 #define MANUFACTURER   "Victrl"
 #define MAX_LINE_LEN   512
 
-int screenW = 1280;
-int screenH = 720;
+int screenW = 1920;   // default, overridden by Z command from host
+int screenH = 1080;
 
 // ── BLE globals ─────────────────────────────────────────────────────────
 BLEServer*         bleServer    = nullptr;
@@ -108,7 +110,7 @@ struct KeyEntry {
 #define HID_KP0            0x62
 #define HID_KPDOT          0x63
 
-const KeyEntry keyMap[] PROGMEM = {
+const KeyEntry keyMap[] = {
   {"a", 'a'}, {"b", 'b'}, {"c", 'c'}, {"d", 'd'}, {"e", 'e'},
   {"f", 'f'}, {"g", 'g'}, {"h", 'h'}, {"i", 'i'}, {"j", 'j'},
   {"k", 'k'}, {"l", 'l'}, {"m", 'm'}, {"n", 'n'}, {"o", 'o'},
@@ -411,7 +413,7 @@ void handleLine(const char* line) {
 
       // Send press
       kbdSend(mods, keys);
-      delay(10);
+      delay(30);  // hold key for OS to register (was 10ms, too short)
       // Release
       uint8_t zero[6] = {0};
       kbdSend(0, zero);
@@ -437,7 +439,7 @@ void handleLine(const char* line) {
         uint8_t keys[6] = {code, 0,0,0,0,0};
         uint8_t mods = keyModifier((uint8_t)outBuf[i]);  // shift handling
         kbdSend(mods, keys);
-        delay(5);
+        delay(15);  // BLE needs time between notifications (was 5ms, too fast)
       }
       kbdReleaseAll();
       Serial.printf("OK T %d\n", outLen);
@@ -448,6 +450,18 @@ void handleLine(const char* line) {
       mouseReleaseAll();
       Serial.println("OK R");
       break;
+    case 'Z': {  // ── Set screen resolution ──
+      int w, h;
+      if (sscanf(args, "%d %d", &w, &h) != 2) { Serial.println("ERR Z"); return; }
+      if (w > 0 && h > 0) {
+        screenW = w; screenH = h;
+        curX = screenW / 2; curY = screenH / 2;  // re-center cursor
+        Serial.printf("OK Z %d %d\n", screenW, screenH);
+      } else {
+        Serial.println("ERR Z invalid");
+      }
+      break;
+    }
     case 'W': { int ms = atoi(args); if (ms>0) delay(ms);
                 Serial.printf("OK W %d\n", ms); break; }
     default:
@@ -492,8 +506,8 @@ uint8_t keyModifier(uint8_t ascii) {
 // ── Key name lookup ─────────────────────────────────────────────────────
 uint8_t lookupKey(const char* name) {
   for (int i = 0; i < keyMapSize; i++) {
-    if (strcmp_P(name, keyMap[i].name) == 0)
-      return pgm_read_byte(&keyMap[i].code);
+    if (strcmp(name, keyMap[i].name) == 0)
+      return keyMap[i].code;
   }
   if (strlen(name) == 1) return (uint8_t)name[0];
   return 0;

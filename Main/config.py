@@ -28,6 +28,7 @@ HISTORY_MAX_LEN  = _cfg["agent"]["history_max_len"]
 PLAN_DIR     = _cfg["paths"]["plan_dir"]
 PROFILE_DIR  = _cfg["paths"]["profile_dir"]
 PROFILE_FILE = _cfg["paths"]["profile_file"]
+LOG_DIR      = _cfg["paths"].get("log_dir", "./log")
 
 # ── HTTP API ──────────────────────────────────────────────────────────────
 API_HOST = _cfg["http"]["host"]
