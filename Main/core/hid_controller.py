@@ -20,14 +20,22 @@ class HidController:
         "0": 11, "1": 2, "2": 3, "3": 4, "4": 5, "5": 6, "6": 7, "7": 8,
         "8": 9, "9": 10,
         "space": 57, "enter": 28, "tab": 15, "backspace": 14, "escape": 1,
+        "esc": 1,  # alias for escape
         "left": 105, "right": 106, "up": 103, "down": 108,
         "shift": 42, "ctrl": 29, "alt": 56, "super": 125,
         "f1": 59, "f2": 60, "f3": 61, "f4": 62, "f5": 63, "f6": 64,
         "f7": 65, "f8": 66, "f9": 67, "f10": 68, "f11": 87, "f12": 88,
         "capslock": 58, "numlock": 69,
+        "delete": 111, "insert": 110, "home": 102, "end": 107,
+        "pageup": 104, "pagedown": 109,
+        "printscreen": 99, "pause": 119, "scrolllock": 70,
         "minus": 12, "equal": 13, "leftbrace": 26, "rightbrace": 27,
         "semicolon": 39, "apostrophe": 40, "grave": 41, "backslash": 43,
         "comma": 51, "dot": 52, "slash": 53,
+        "kp1": 79, "kp2": 80, "kp3": 81, "kp4": 75, "kp5": 76,
+        "kp6": 77, "kp7": 71, "kp8": 72, "kp9": 73, "kp0": 82,
+        "kpslash": 98, "kpasterisk": 55, "kpminus": 74, "kpplus": 78,
+        "kpenter": 96, "kpperiod": 83, "kpdot": 83,
     }
 
     SHIFT_MAP = {
@@ -58,13 +66,14 @@ class HidController:
             logger.info("HID controller running in dry-run mode")
 
     def _init_uinput(self) -> None:
-        """Initialize uinput device for keyboard and mouse."""
+        """Initialize uinput device for keyboard and absolute mouse."""
         try:
             import evdev
             from evdev import ecodes as e
 
             self._evdev = evdev
             self._ecodes = e
+            self._abs_max = 32767  # logical coordinate range, same as ESP32
 
             keys = [
                 e.KEY_A, e.KEY_B, e.KEY_C, e.KEY_D, e.KEY_E, e.KEY_F,
@@ -84,26 +93,36 @@ class HidController:
                 e.KEY_LEFTBRACE, e.KEY_RIGHTBRACE, e.KEY_SEMICOLON,
                 e.KEY_APOSTROPHE, e.KEY_GRAVE, e.KEY_BACKSLASH,
                 e.KEY_COMMA, e.KEY_DOT, e.KEY_SLASH,
+                e.KEY_DELETE, e.KEY_INSERT, e.KEY_HOME, e.KEY_END,
+                e.KEY_PAGEUP, e.KEY_PAGEDOWN, e.KEY_SCROLLLOCK,
+                e.KEY_PAUSE, e.KEY_SYSRQ, e.KEY_KPSLASH, e.KEY_KPASTERISK,
+                e.KEY_KPMINUS, e.KEY_KPPLUS, e.KEY_KPENTER,
+                e.KEY_KP1, e.KEY_KP2, e.KEY_KP3, e.KEY_KP4, e.KEY_KP5,
+                e.KEY_KP6, e.KEY_KP7, e.KEY_KP8, e.KEY_KP9, e.KEY_KP0,
+                e.KEY_KPDOT,
             ]
+
+            abs_info = evdev.AbsInfo(
+                value=0, min=0, max=self._abs_max, fuzz=0, flat=0, resolution=0
+            )
 
             self._ui = evdev.UInput(
                 name="Victrl Virtual HID",
                 events={
                     e.EV_KEY: keys,
                     e.EV_REL: [
-                        e.REL_X, e.REL_Y, e.REL_WHEEL,
+                        e.REL_WHEEL,
                         e.REL_HWHEEL,
                     ],
                     e.EV_ABS: [
-                        e.ABS_X, e.ABS_Y,
+                        (e.ABS_X, abs_info),
+                        (e.ABS_Y, abs_info),
                     ],
                 },
             )
-            # Set up absolute axis ranges
-            self._ui.capabilities()
 
             self._uinput_available = True
-            logger.info("uinput HID device created successfully")
+            logger.info("uinput HID device created (absolute mouse)")
 
         except ImportError:
             logger.warning("evdev not installed, HID operations will be logged only")
@@ -124,17 +143,19 @@ class HidController:
         """Move mouse to absolute pixel coordinates.
 
         Args:
-            x: Target X coordinate in pixels.
-            y: Target Y coordinate in pixels.
+            x: Target X coordinate in pixels (0 .. screen_width).
+            y: Target Y coordinate in pixels (0 .. screen_height).
         """
         if self.dry_run:
             logger.info(f"[DRY] mouse_move_abs({x}, {y})")
             return
         try:
-            # Use relative events since we're setting position
             if self._ui:
-                self._ui.write(self._ecodes.EV_REL, self._ecodes.REL_X, x)
-                self._ui.write(self._ecodes.EV_REL, self._ecodes.REL_Y, y)
+                # Map pixel → logical 0..32767 (matches ESP32 absolute range)
+                abs_x = int(x * self._abs_max / self._screen_width)
+                abs_y = int(y * self._abs_max / self._screen_height)
+                self._ui.write(self._ecodes.EV_ABS, self._ecodes.ABS_X, abs_x)
+                self._ui.write(self._ecodes.EV_ABS, self._ecodes.ABS_Y, abs_y)
                 self._ui.syn()
         except Exception as e:
             logger.error(f"mouse_move_abs failed: {e}")
@@ -270,7 +291,7 @@ class HidController:
         except Exception as e:
             logger.error(f"key_press failed: {e}")
 
-    def type_string(self, text: str, delay_ms: float = 5.0) -> None:
+    def type_string(self, text: str, delay_ms: float = 25.0) -> None:
         """Type a string of text.
 
         Args:
