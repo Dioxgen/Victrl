@@ -42,6 +42,8 @@ Current latest version: V2.1
 
 ### Fixes:
 
+Fix the logic of uinput/OTG mode
+
 Fixed mouse logic:
 
 | File                      | Change                                                                                  | Reason                                           |
