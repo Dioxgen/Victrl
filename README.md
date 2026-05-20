@@ -121,7 +121,9 @@ The following capabilities are only reserved in the architecture for this versio
 - **Exploration Mode**: The model actively scans the screen, discovers elements, and records them into memory
 - **Categorized Long-Term Memory**: Splitting a single document into multiple sub-documents indexed by category
 - **Visual Interface**: The device will integrate a small LCD screen and function buttons for better interaction
-- **Efficiency Optimization**: Lower context consumption and faster decision-making
+- **WebUI Interaction**: Support controlling Victrl via WebUI
+- **Efficiency Optimization**: Lower context consumption and faster decision-making speed
+- **Camera**: Camera-based screen capture for devices without video output
 
 ------
 
