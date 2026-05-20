@@ -1,5 +1,5 @@
 /*
- * Victrl ESP32 BLE HID Bridge
+ * Victrl ESP32 BLE HID Bridge  v2.0
  * ──────────────────────────────────────────────────────────────────
  * Uses the ESP32 core BLE library only
  *
@@ -27,8 +27,15 @@
 #define MANUFACTURER   "Victrl"
 #define MAX_LINE_LEN   512
 
-int screenW = 1920;   // default, overridden by Z command from host
+int screenW = 1920;   // overridden by Z command from host
 int screenH = 1080;
+
+// Last known absolute position (logical 0..32767) and button state.
+// In absolute HID mode every report is a complete state snapshot —
+// M commands must preserve the current button state or drags break.
+uint16_t lastAbsX = 16383;
+uint16_t lastAbsY = 16383;
+uint8_t  lastButtons = 0;
 
 // ── BLE globals ─────────────────────────────────────────────────────────
 BLEServer*         bleServer    = nullptr;
@@ -39,10 +46,6 @@ BLECharacteristic* kbdBootOut   = nullptr;  // keyboard boot output (LEDs)
 BLECharacteristic* mouseReport  = nullptr;  // mouse input report (ID 2)
 BLEAdvertising*    advertising  = nullptr;
 bool bleConnected = false;
-
-// ── Virtual cursor tracking ─────────────────────────────────────────────
-int curX = screenW / 2;
-int curY = screenH / 2;
 
 // ── Serial line buffer ──────────────────────────────────────────────────
 char lineBuf[MAX_LINE_LEN];
@@ -60,7 +63,7 @@ struct KeyEntry {
 #define _K_ALT    0xE2
 #define _K_GUI    0xE3
 
-// ── USB HID Keyboard usage IDs (raw hex) ────────────────────────────────
+// ── USB HID Keyboard usage IDs ──────────────────────────────────────────
 #define HID_ENTER          0x28
 #define HID_ESC            0x29
 #define HID_BACKSPACE      0x2A
@@ -185,7 +188,9 @@ static const uint8_t kbdReportDesc[] = {
   0xC0               // End Collection
 };
 
-// Mouse boot report descriptor (4 bytes: buttons + X + Y + wheel)
+// Absolute mouse report descriptor (6 bytes: buttons + X_16 + Y_16 + Wheel_8)
+// Report ID 2.  Logical coordinate range 0..32767 maps to screen pixels.
+// Wheel is relative (signed 8-bit) so scrolling works independently.
 static const uint8_t mouseReportDesc[] = {
   0x05, 0x01,        // Usage Page (Generic Desktop)
   0x09, 0x02,        // Usage (Mouse)
@@ -193,9 +198,10 @@ static const uint8_t mouseReportDesc[] = {
   0x85, 0x02,        //   Report ID 2
   0x09, 0x01,        //   Usage (Pointer)
   0xA1, 0x00,        //   Collection (Physical)
+  // ── Buttons ──
   0x05, 0x09,        //     Usage Page (Buttons)
-  0x19, 0x01,        //     Usage Minimum (Button 1)
-  0x29, 0x03,        //     Usage Maximum (Button 3)
+  0x19, 0x01,        //     Usage Minimum (1)
+  0x29, 0x03,        //     Usage Maximum (3)
   0x15, 0x00,        //     Logical Minimum (0)
   0x25, 0x01,        //     Logical Maximum (1)
   0x75, 0x01,        //     Report Size (1)
@@ -204,15 +210,28 @@ static const uint8_t mouseReportDesc[] = {
   0x95, 0x01,        //     Report Count (1)
   0x75, 0x05,        //     Report Size (5)
   0x81, 0x01,        //     Input (Constant)        — 5-bit padding
+  // ── X (absolute 16-bit) ──
   0x05, 0x01,        //     Usage Page (Generic Desktop)
   0x09, 0x30,        //     Usage (X)
+  0x15, 0x00,        //     Logical Minimum (0)
+  0x26, 0xFF, 0x7F,  //     Logical Maximum (32767)
+  0x75, 0x10,        //     Report Size (16)
+  0x95, 0x01,        //     Report Count (1)
+  0x81, 0x02,        //     Input (Data, Var, Abs)
+  // ── Y (absolute 16-bit) ──
   0x09, 0x31,        //     Usage (Y)
+  0x15, 0x00,        //     Logical Minimum (0)
+  0x26, 0xFF, 0x7F,  //     Logical Maximum (32767)
+  0x75, 0x10,        //     Report Size (16)
+  0x95, 0x01,        //     Report Count (1)
+  0x81, 0x02,        //     Input (Data, Var, Abs)
+  // ── Wheel (relative 8-bit signed) ──
   0x09, 0x38,        //     Usage (Wheel)
   0x15, 0x81,        //     Logical Minimum (-127)
   0x25, 0x7F,        //     Logical Maximum (127)
   0x75, 0x08,        //     Report Size (8)
-  0x95, 0x03,        //     Report Count (3)
-  0x81, 0x06,        //     Input (Data, Var, Rel)  — X, Y, Wheel
+  0x95, 0x01,        //     Report Count (1)
+  0x81, 0x06,        //     Input (Data, Var, Rel)
   0xC0,              //   End Collection
   0xC0               // End Collection
 };
@@ -228,7 +247,7 @@ class VictrlServerCB : public BLEServerCallbacks {
 uint8_t lookupKey(const char* name);
 void kbdSend(uint8_t modifiers, const uint8_t keys[6]);
 void kbdReleaseAll();
-void mouseSend(uint8_t buttons, int8_t dx, int8_t dy, int8_t wheel);
+void mouseSendAbs(uint8_t buttons, uint16_t absX, uint16_t absY, int8_t wheel);
 void mouseReleaseAll();
 void handleLine(const char* line);
 
@@ -236,9 +255,8 @@ void handleLine(const char* line);
 void setup() {
   Serial.begin(SERIAL_BAUD);
   Serial.setTimeout(50);
-  Serial.println("INIT Victrl ESP32 BLE HID Bridge");
+  Serial.println("INIT Victrl ESP32 BLE HID Bridge v2.0");
 
-  // ── 1. BLE stack ──────────────────────────────────────────────────
   BLEDevice::init(DEVICE_NAME);
 
   bleServer = BLEDevice::createServer();
@@ -246,32 +264,27 @@ void setup() {
 
   bleHID = new BLEHIDDevice(bleServer);
 
-  // ── 2. Build combined Report Map (keyboard ID1 + mouse ID2) ─────
+  // Combined Report Map (keyboard ID1 + mouse ID2)
   uint8_t combinedDesc[sizeof(kbdReportDesc) + sizeof(mouseReportDesc)];
   memcpy(combinedDesc, kbdReportDesc, sizeof(kbdReportDesc));
   memcpy(combinedDesc + sizeof(kbdReportDesc), mouseReportDesc, sizeof(mouseReportDesc));
   bleHID->reportMap(combinedDesc, sizeof(combinedDesc));
 
-  // ── 3. Report characteristics (create AFTER reportMap) ───────────
-  kbdReport   = bleHID->inputReport(1);       // regular keyboard input
-  mouseReport = bleHID->inputReport(2);       // regular mouse input
-  bleHID->outputReport(1);                    // keyboard output (LEDs, etc.)
+  kbdReport   = bleHID->inputReport(1);
+  mouseReport = bleHID->inputReport(2);
+  bleHID->outputReport(1);
 
-  // ── 4. Boot protocol characteristics (REQUIRED by Windows) ───────
   kbdBootIn  = bleHID->bootInput();
   kbdBootOut = bleHID->bootOutput();
 
-  // ── 5. Device metadata ───────────────────────────────────────────
   bleHID->manufacturer()->setValue(MANUFACTURER);
   bleHID->pnp(0x02, 0x1234, 0x5678, 0x0110);
   bleHID->hidInfo(0x00, 0x01);
 
-  // ── 6. Start services ────────────────────────────────────────────
   bleHID->startServices();
 
-  // ── 7. Advertising ───────────────────────────────────────────────
   advertising = bleServer->getAdvertising();
-  advertising->setAppearance(0x03C0);           // Generic HID
+  advertising->setAppearance(0x03C0);
   advertising->addServiceUUID(bleHID->hidService()->getUUID());
   advertising->setScanResponse(true);
   advertising->start();
@@ -300,9 +313,7 @@ void kbdSend(uint8_t modifiers, const uint8_t keys[6]) {
   if (!bleConnected) return;
   uint8_t report[8] = { modifiers, 0x00, keys[0], keys[1], keys[2],
                         keys[3],   keys[4], keys[5] };
-  // Regular input report (Report Protocol)
   if (kbdReport) { kbdReport->setValue(report, 8); kbdReport->notify(); }
-  // Boot input report (Boot Protocol — BIOS / older Windows)
   if (kbdBootIn) { kbdBootIn->setValue(report, 8); kbdBootIn->notify(); }
   delay(2);
 }
@@ -312,16 +323,26 @@ void kbdReleaseAll() {
   kbdSend(0, empty);
 }
 
-// ── Mouse report sender ─────────────────────────────────────────────────
-void mouseSend(uint8_t buttons, int8_t dx, int8_t dy, int8_t wheel) {
+// ── Absolute mouse report sender ────────────────────────────────────────
+// Report format (6 bytes): [buttons] [X_lo] [X_hi] [Y_lo] [Y_hi] [wheel]
+// Logical range 0..32767 maps to screenW..screenH pixels.
+void mouseSendAbs(uint8_t buttons, uint16_t absX, uint16_t absY, int8_t wheel) {
   if (!bleConnected || !mouseReport) return;
-  uint8_t report[4] = { buttons, (uint8_t)dx, (uint8_t)dy, (uint8_t)wheel };
-  mouseReport->setValue(report, 4);
+  uint8_t report[6] = {
+    buttons,
+    (uint8_t)(absX & 0xFF),
+    (uint8_t)((absX >> 8) & 0xFF),
+    (uint8_t)(absY & 0xFF),
+    (uint8_t)((absY >> 8) & 0xFF),
+    (uint8_t)wheel,
+  };
+  mouseReport->setValue(report, 6);
   mouseReport->notify();
 }
 
 void mouseReleaseAll() {
-  mouseSend(0, 0, 0, 0);
+  lastButtons = 0;
+  mouseSendAbs(0, 0, 0, 0);
 }
 
 // ── Command dispatcher ──────────────────────────────────────────────────
@@ -337,11 +358,11 @@ void handleLine(const char* line) {
       if (sscanf(args, "%d %d", &x, &y) != 2) { Serial.println("ERR M"); return; }
       if (x < 0) x = 0; if (x > screenW) x = screenW;
       if (y < 0) y = 0; if (y > screenH) y = screenH;
-      int dx = x - curX, dy = y - curY;
-      if (dx < -127) dx = -127; if (dx > 127) dx = 127;
-      if (dy < -127) dy = -127; if (dy > 127) dy = 127;
-      if (dx || dy) { mouseSend(0, (int8_t)dx, (int8_t)dy, 0); curX += dx; curY += dy; }
-      Serial.printf("OK M %d %d\n", curX, curY);
+      // Map pixel → logical 0..32767
+      lastAbsX = (uint16_t)(((uint32_t)x * 32767UL) / (uint32_t)screenW);
+      lastAbsY = (uint16_t)(((uint32_t)y * 32767UL) / (uint32_t)screenH);
+      mouseSendAbs(lastButtons, lastAbsX, lastAbsY, 0);
+      Serial.printf("OK M %d %d -> %u %u\n", x, y, lastAbsX, lastAbsY);
       break;
     }
     case 'D': {  // ── Mouse down ──
@@ -350,12 +371,14 @@ void handleLine(const char* line) {
       else if (!strcmp(args, "right"))  btn = 0x02;
       else if (!strcmp(args, "middle")) btn = 0x04;
       else { Serial.printf("ERR D %s\n", args); return; }
-      mouseSend(btn, 0, 0, 0);
+      lastButtons = btn;
+      mouseSendAbs(lastButtons, lastAbsX, lastAbsY, 0);
       Serial.printf("OK D %s\n", args);
       break;
     }
     case 'U': {  // ── Mouse up ──
-      mouseSend(0, 0, 0, 0);
+      lastButtons = 0;
+      mouseSendAbs(0, lastAbsX, lastAbsY, 0);
       Serial.printf("OK U %s\n", args);
       break;
     }
@@ -365,17 +388,18 @@ void handleLine(const char* line) {
       else if (!strcmp(args, "right"))  btn = 0x02;
       else if (!strcmp(args, "middle")) btn = 0x04;
       else { Serial.printf("ERR C %s\n", args); return; }
-      mouseSend(btn, 0, 0, 0);  delay(15);
-      mouseSend(0,   0, 0, 0);
+      lastButtons = btn;
+      mouseSendAbs(lastButtons, lastAbsX, lastAbsY, 0); delay(15);
+      lastButtons = 0;
+      mouseSendAbs(0,           lastAbsX, lastAbsY, 0);
       Serial.printf("OK C %s\n", args);
       break;
     }
     case 'S': {  // ── Scroll ──
       int dx = 0, dy = 0;
       sscanf(args, "%d %d", &dx, &dy);
-      if (dx < -127) dx = -127; if (dx > 127) dx = 127;
       if (dy < -127) dy = -127; if (dy > 127) dy = 127;
-      mouseSend(0, 0, 0, (int8_t)dy);
+      mouseSendAbs(lastButtons, lastAbsX, lastAbsY, (int8_t)dy);
       Serial.printf("OK S %d %d\n", dx, dy);
       break;
     }
@@ -401,20 +425,17 @@ void handleLine(const char* line) {
         else if (code == _K_SHIFT) mods |= 0x02;
         else if (code == _K_ALT)   mods |= 0x04;
         else if (code == _K_GUI)   mods |= 0x08;
-        else if (ki < 6) {           // non-modifier key
+        else if (ki < 6) {
           if (code >= 0x20 && code <= 0x7E) {
-            // ASCII — convert to USB HID code
             keys[ki++] = asciiToHid(code);
           } else {
-            keys[ki++] = code;       // already a HID code
+            keys[ki++] = code;
           }
         }
       }
 
-      // Send press
       kbdSend(mods, keys);
-      delay(30);  // hold key for OS to register (was 10ms, too short)
-      // Release
+      delay(30);
       uint8_t zero[6] = {0};
       kbdSend(0, zero);
       Serial.printf("OK K %s\n", args);
@@ -437,9 +458,9 @@ void handleLine(const char* line) {
       for (int i = 0; i < outLen; i++) {
         uint8_t code = asciiToHid((uint8_t)outBuf[i]);
         uint8_t keys[6] = {code, 0,0,0,0,0};
-        uint8_t mods = keyModifier((uint8_t)outBuf[i]);  // shift handling
+        uint8_t mods = keyModifier((uint8_t)outBuf[i]);
         kbdSend(mods, keys);
-        delay(15);  // BLE needs time between notifications (was 5ms, too fast)
+        delay(15);
       }
       kbdReleaseAll();
       Serial.printf("OK T %d\n", outLen);
@@ -455,7 +476,7 @@ void handleLine(const char* line) {
       if (sscanf(args, "%d %d", &w, &h) != 2) { Serial.println("ERR Z"); return; }
       if (w > 0 && h > 0) {
         screenW = w; screenH = h;
-        curX = screenW / 2; curY = screenH / 2;  // re-center cursor
+        lastAbsX = 16383; lastAbsY = 16383; lastButtons = 0;
         Serial.printf("OK Z %d %d\n", screenW, screenH);
       } else {
         Serial.println("ERR Z invalid");
@@ -470,7 +491,6 @@ void handleLine(const char* line) {
 }
 
 // ── ASCII → USB HID keycode ─────────────────────────────────────────────
-// ASCII values that map 1:1 to HID (after removing 0x60 offset)
 uint8_t asciiToHid(uint8_t ascii) {
        if (ascii >= 'a' && ascii <= 'z') return ascii - 'a' + 0x04;
   else if (ascii >= 'A' && ascii <= 'Z') return ascii - 'A' + 0x04;
@@ -480,17 +500,15 @@ uint8_t asciiToHid(uint8_t ascii) {
   else if (ascii == '\n' || ascii=='\r')return 0x28;
   else if (ascii == '\t')               return 0x2B;
   else if (ascii == '\b')               return 0x2A;
-  // Symbols — HID code lookup
   else switch (ascii) {
     case '-': return 0x2D; case '=': return 0x2E; case '[': return 0x2F;
     case ']': return 0x30; case '\\':return 0x31; case ';': return 0x33;
     case '\'':return 0x34; case '`': return 0x35; case ',': return 0x36;
     case '.': return 0x37; case '/': return 0x38;
-    default:  return 0x00;  // unmapped
+    default:  return 0x00;
   }
 }
 
-// ── Which characters need Left-Shift modifier ───────────────────────────
 uint8_t keyModifier(uint8_t ascii) {
   uint8_t mod = 0;
   if (ascii >= 'A' && ascii <= 'Z') mod |= 0x02;

@@ -110,6 +110,53 @@ class VictrlAgent:
         self._img_dir = os.path.join(self.log_dir, f"{task_id}_img")
         os.makedirs(self._img_dir, exist_ok=True)
 
+    @staticmethod
+    def _action_details(resp: dict, screen_w: int, screen_h: int) -> str:
+        """Build a human-readable summary of the action to be executed."""
+        atype = resp.get("action_type", "?")
+        lines = [f"action_type: {atype}"]
+
+        box = resp.get("box_2d")
+        if box:
+            cx, cy = normalized_to_pixel(box, screen_w, screen_h)
+            lines.append(f"box_2d: {box} → pixel_center=({cx}, {cy})")
+
+        from_box = resp.get("from_box")
+        to_box = resp.get("to_box")
+        if from_box:
+            fx, fy = normalized_to_pixel(from_box, screen_w, screen_h)
+            lines.append(f"from_box: {from_box} → pixel=({fx}, {fy})")
+        if to_box:
+            tx, ty = normalized_to_pixel(to_box, screen_w, screen_h)
+            lines.append(f"to_box: {to_box} → pixel=({tx}, {ty})")
+
+        button = resp.get("button")
+        if button and button != "left":  # left is default, only log non-default
+            lines.append(f"button: {button}")
+
+        key = resp.get("key")
+        if key:
+            lines.append(f"key: {key}")
+
+        text = resp.get("text")
+        if text:
+            lines.append(f"text: {repr(text[:80])}")
+
+        delta_x = resp.get("delta_x", 0)
+        delta_y = resp.get("delta_y", 0)
+        if delta_x or delta_y:
+            lines.append(f"scroll: dx={delta_x}, dy={delta_y}")
+
+        wait = resp.get("wait_seconds")
+        if wait:
+            lines.append(f"wait: {wait}s")
+
+        sleep_after = resp.get("sleep_before_next")
+        if sleep_after:
+            lines.append(f"sleep_after: {sleep_after}s")
+
+        return "\n  ".join(lines)
+
     def _log_step(self, step_no: int, captured: bool, system_prompt: str,
                   user_text: str, has_image: bool, resp: dict) -> None:
         """Write full step details to the per-task log file."""
@@ -121,7 +168,11 @@ class VictrlAgent:
         fh.write(f"STEP {step_no} | {datetime.now().isoformat()}\n")
         fh.write(f"Screen: {'captured' if captured else 'skipped'} | "
                  f"Image attached: {has_image}\n")
-        fh.write(f"{'=' * 70}\n\n")
+
+        # Action details with pixel coordinates
+        fh.write(f"ACTION: ")
+        fh.write(self._action_details(resp, self.uvc.width, self.uvc.height))
+        fh.write(f"\n{'=' * 70}\n\n")
 
         fh.write("─── SYSTEM PROMPT ──────────────────────────────\n")
         fh.write(system_prompt)
@@ -265,10 +316,12 @@ class VictrlAgent:
                 observation = resp.get("observation", "")
                 self_eval = resp.get("self_evaluation", "")
                 obs_short = observation[:80] + "..." if len(observation) > 80 else observation
+                action_detail = self._action_details(resp, self.uvc.width, self.uvc.height)
                 logger.info(
                     f"Step {self.action_count}: action={action_type}, "
                     f"obs=\"{obs_short}\""
                 )
+                logger.info(f"  detail: {action_detail}")
                 if self_eval:
                     logger.info(f"  self_eval: \"{self_eval[:120]}\"")
 
@@ -404,17 +457,26 @@ class VictrlAgent:
                 button = resp.get("button", "left")
                 from_box = resp.get("from_box")
                 to_box = resp.get("to_box")
-                hold = resp.get("hold", -1)
+                hold = resp.get("hold", 0)
                 if from_box:
-                    x, y = normalized_to_pixel(from_box, screen_w, screen_h)
-                    self.hid.mouse_move_abs(x, y)
+                    x1, y1 = normalized_to_pixel(from_box, screen_w, screen_h)
+                    self.hid.mouse_move_abs(x1, y1)
                     time.sleep(0.02)
+                else:
+                    x1 = y1 = 0
                 self.hid.mouse_down(button)
                 time.sleep(0.05)
                 if to_box:
-                    x, y = normalized_to_pixel(to_box, screen_w, screen_h)
-                    self.hid.mouse_move_abs(x, y)
-                if hold != -1:
+                    x2, y2 = normalized_to_pixel(to_box, screen_w, screen_h)
+                    # Smooth drag in small steps so the host sees continuous
+                    # movement (required for desktop selection boxes etc.)
+                    steps = 8
+                    for i in range(1, steps + 1):
+                        tx = x1 + (x2 - x1) * i // steps
+                        ty = y1 + (y2 - y1) * i // steps
+                        self.hid.mouse_move_abs(tx, ty)
+                        time.sleep(0.005)
+                if hold >= 0:
                     if hold > 0:
                         time.sleep(hold / 1000.0)
                     self.hid.mouse_up(button)

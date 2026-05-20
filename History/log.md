@@ -2,7 +2,7 @@
 
 > [[中文](log_CN.md)|English]
 
-Current latest version: V2.0
+Current latest version: V2.1
 
 ## Victrl V1.0
 
@@ -30,3 +30,22 @@ Current latest version: V2.0
   - Chinese IME interference — IME interprets English keystrokes as pinyin, outputting full-width punctuation and garbled text; Python side explicitly maps all symbols through shift, system prompt adds IME detection rules
   - Model response missing done field causing entire response to be discarded — done made optional, defaults to false
   - MS2109 USB auto-suspend — video pipeline breaks after 2 seconds idle, outputting color bars; added udev rule + runtime defense
+
+## Victrl V2.1
+
+2026.05.20 Completion
+
+### New Features:
+
+  - Optimized prompts
+  - Added mouse coordinates and actions to log
+
+### Fixes:
+
+Fixed mouse logic:
+
+| File                      | Change                                                                                  | Reason                                           |
+| ------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `esp32_hid/esp32_hid.ino` | Relative→absolute mouse; `lastAbsX`/`lastAbsY`/`lastButtons` state tracking             | Inaccurate coordinate positioning, drag disconnection |
+| `core/agent.py`           | `drag` defaults to `hold=0` (auto-release); drag split into 8 smooth movement steps     | Old default `-1` caused button to never release  |
+| `core/cloud_client.py`    | Added `hold` field comment `// ms to hold before releasing`                             | Model didn't know the meaning of `hold`          |
