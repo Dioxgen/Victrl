@@ -4,7 +4,7 @@
 
 > [中文|[English](README.md)]
 
-![github license](https://img.shields.io/github/license/Dioxgen/Victrl)![Language](https://img.shields.io/badge/language-python/C++-brightgreen)![](https://img.shields.io/badge/Platform-Win/MacOS/Linux/Android/ICS-blue)![](https://img.shields.io/badge/Version-2.1-red)
+![github license](https://img.shields.io/github/license/Dioxgen/Victrl) ![Language](https://img.shields.io/badge/language-python/C++-brightgreen) ![](https://img.shields.io/badge/Platform-Win/MacOS/Linux/Android/ICS-blue) ![](https://img.shields.io/badge/Version-2.1-red)
 
 当今 AI Agent 依赖于在目标设备上进行软件的基础配置以操控设备，Victrl 的目标是构建*单个独立于被控系统的 AI Agent 纯硬件设备*，通过 “UVC 视觉输入 + HID 输出” 的类人方式，实现对任意设备即插即用式的自动化操作。
 

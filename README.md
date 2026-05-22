@@ -4,7 +4,7 @@
 
 > [[中文](README_CN.md)|English]
 
-![github license](https://img.shields.io/github/license/Dioxgen/Victrl)![Language](https://img.shields.io/badge/language-python/C++-brightgreen)![](https://img.shields.io/badge/Platform-Win/MacOS/Linux/Android/ICS-blue)![](https://img.shields.io/badge/Version-2.1-red)
+![github license](https://img.shields.io/github/license/Dioxgen/Victrl) ![Language](https://img.shields.io/badge/language-python/C++-brightgreen) ![](https://img.shields.io/badge/Platform-Win/MacOS/Linux/Android/ICS-blue) ![](https://img.shields.io/badge/Version-2.1-red)
 
 Today's AI Agents rely on software-level configuration on the target device to control it. Victrl aims to build *a single hardware-only AI Agent device independent of the controlled system*, achieving plug-and-play automation for any device through a human-like "UVC visual input + HID output" approach.
 
