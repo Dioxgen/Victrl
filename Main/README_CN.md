@@ -39,6 +39,8 @@ victrl/
 
 ## 硬件准备
 
+推荐使用 MS2109 采集卡、ESP32 Dev Module。
+
 | 组件 | 说明 |
 |------|------|
 | Linux 主机 | Python 3.12 可用的 Linux (x86_64 / ARM)，运行 Victrl |
@@ -169,7 +171,7 @@ mkdir -p ./log
 确保 `config.json` 中已填写 API 凭据和采集卡设备路径：
 
 ```bash
-# 编辑配置
+# 编辑配置，推荐使用 Doubao-seed 系列 API
 vim config.json
 
 # 使用 ESP32 BLE HID 模式（推荐）

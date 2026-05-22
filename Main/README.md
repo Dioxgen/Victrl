@@ -39,6 +39,8 @@ victrl/
 
 ## Hardware Preparation
 
+It is recommended to use MS2109 acquisition card and ESP32 Dev Module.
+
 | Component | Description |
 |-----------|-------------|
 | Linux Host | Linux system (x86_64 / ARM) with Python 3.12, runs Victrl |
@@ -169,7 +171,7 @@ mkdir -p ./log
 Make sure `config.json` contains the API credentials and capture card device path:
 
 ```bash
-# Edit configuration
+# Edit configuration, it is recommended to use the Doubao-seed series APIs
 vim config.json
 
 # Use ESP32 BLE HID mode (recommended)
