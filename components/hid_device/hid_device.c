@@ -233,6 +233,15 @@ esp_err_t hid_device_init(void)
     }
     s_usb_strings[3] = s_serial;
 
+    /* Print exactly what a host will read back. This matters because Windows
+     * Device Manager names a HID device after the class driver ("HID Keyboard
+     * Device"), not after the product string — the product string only shows
+     * up as the device's "Bus reported device description". Having all three
+     * in the boot log makes "the descriptor did not take effect" a comparison
+     * of two concrete strings instead of a guess about which node to look at. */
+    ESP_LOGI(TAG, "USB identity: manufacturer=\"%s\", product=\"%s\", serial=\"%s\"",
+             s_usb_strings[1], s_usb_strings[2], s_usb_strings[3]);
+
     tusb_cfg.descriptor.device = &s_device_desc;
     tusb_cfg.descriptor.full_speed_config = s_config_desc;
     tusb_cfg.descriptor.string = s_usb_strings;
