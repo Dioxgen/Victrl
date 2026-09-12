@@ -31,6 +31,8 @@
 
 此前每台设备都报固定的 `0001`，那只能识别型号、永远识别不出具体是哪一台。`CONFIG_TINYUSB_DESC_USE_ESPRESSIF_VID` 与 `CONFIG_TINYUSB_DESC_USE_DEFAULT_PID` 都处于开启状态，所以 `0x303A:0x4001` 是乐鑫默认值、与其他 ESP32 板子共用——真正用于识别某一台设备的是这些字符串，尤其是序列号。`sdkconfig` 里的 `CONFIG_TINYUSB_DESC_*` 字符串并不是主机实际收到的内容：固件传的是自己的 `s_usb_strings` 数组，而应用提供的数组优先级高于默认值。
 
+要确认主机究竟收到了什么，请读设备上报的属性，而不是节点名。在 Windows 上用 `Get-PnpDevice | Where-Object InstanceId -like 'USB\VID_303A&PID_4001*'` 拿到实例 id，再读 `(Get-PnpDeviceProperty -InstanceId <id> -KeyName DEVPKEY_Device_BusReportedDeviceDesc).Data`——这个字符串就是实际送达的 `iProduct` 值；设备管理器里“属性 → 详细信息 → 总线报告的设备描述”是同一个值。在 Linux 上 `lsusb -v -d 303a:4001` 会打印 `iManufacturer`、`iProduct` 和 `iSerialNumber`。设备管理器对 HID 设备显示的是类驱动名，所以“键盘”下面的 “HID Keyboard Device” 是正常现象，与这些字符串无关——去看那个节点，正是把正常工作的描述符误判为失效的原因。
+
 ## 绝对坐标映射
 
 ```

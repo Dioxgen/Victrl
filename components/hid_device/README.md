@@ -31,6 +31,8 @@ The strings the host sees are deliberate rather than incidental: this device is 
 
 Every unit used to report the fixed serial `0001`, which identified the model but never the unit. Both `CONFIG_TINYUSB_DESC_USE_ESPRESSIF_VID` and `CONFIG_TINYUSB_DESC_USE_DEFAULT_PID` are enabled, so `0x303A:0x4001` is Espressif's default and is shared with other ESP32 boards — the strings, and the serial in particular, are what identify a specific device. The `CONFIG_TINYUSB_DESC_*` strings in `sdkconfig` are not what the host receives: the firmware passes its own `s_usb_strings` array, and an application-supplied array takes precedence over the defaults.
 
+To check what a host actually received, read the property the device reported rather than the node name. On Windows, take the instance id from `Get-PnpDevice | Where-Object InstanceId -like 'USB\VID_303A&PID_4001*'` and then read `(Get-PnpDeviceProperty -InstanceId <id> -KeyName DEVPKEY_Device_BusReportedDeviceDesc).Data` — that string is the `iProduct` value as it arrived; the same value is in Device Manager under Properties → Details → "Bus reported device description". On Linux, `lsusb -v -d 303a:4001` prints `iManufacturer`, `iProduct` and `iSerialNumber`. Device Manager names a HID device after the class driver, so "HID Keyboard Device" under Keyboards is expected and says nothing about these strings — checking that node is how a working descriptor gets mistaken for a broken one.
+
 ## Absolute coordinate mapping
 
 ```
