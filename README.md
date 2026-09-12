@@ -33,7 +33,7 @@ The LLM is a stateless function called over HTTPS. Everything that turns a state
 - the MJPEG decode, region-of-interest crop/scale, re-encode and upload pipeline
 - the HID synthesis, and the on-device WebUI
 
-There is no Linux, no Python and no OS on the board — ESP-IDF 6.0.1 with FreeRTOS, 32 MB of PSRAM and a microSD card. A cloud agent framework keeps its memory on a server; **this keeps its memory on the device.**
+There is no Linux, no Python and no OS on the board — ESP-IDF 6.0.1 with FreeRTOS, 32 MB of PSRAM and a microSD card. The cloud does inference and nothing else, for this project and for software agents alike; what differs is where the *rest* runs. A software agent's harness and memory need a general-purpose OS plus a software path to the target — the target itself, or a machine that reaches it over the network, an API or a remote-desktop protocol. Here both live on a microcontroller outside the target: the trajectory, plan and session store never touch the target's disk, and the target's software has no handle on the device that holds them.
 
 ## Value & characteristics
 
