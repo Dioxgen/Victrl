@@ -77,10 +77,6 @@ graph LR
     Cloud -->|JSON actions| Loop
 ```
 
-> Only syntax that has been valid since Mermaid 8 is used here: `-->`, `---`,
-> plain edge labels, quoted node text. Bidirectional arrows (`<-->`) were added
-> in Mermaid 9.4 and break the older renderer still used by some editors.
-
 Each step: capture a frame, optionally crop/scale it to a region of interest, encode and upload it together with a text status line and the trajectory, receive JSON actions, execute them over HID, observe the result. The loop is stateless toward the API and stateful on the SD card.
 
 ---
