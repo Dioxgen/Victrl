@@ -237,6 +237,18 @@ Victrl is open-sourced under the **Apache 2.0 License**. It is intended for rese
 
 The author and contributors are not liable for any direct, indirect, incidental, special, or punitive damages, including but not limited to data loss, system damage, business interruption, or violation of third-party terms of service, arising from use of this software.
 
+## Special thanks
+
+**To the open-source projects this stands on.** [Espressif](https://www.espressif.com/) carries most of it: ESP-IDF 6.0.1, ESP-Hosted, esp_tinyusb, and the UVC host stack that `components/uvc_capture_card_driver` is built from — 18 of its 20 `.c`/`.h` files are Espressif's own code under Apache-2.0, every one of them still carrying its copyright header, and only the `uvc_capture_card_driver.*` wrapper is this project's. [TinyUSB](https://github.com/hathach/tinyusb) by hathach (MIT) is the USB device stack that makes the keyboard and mouse real peripherals rather than simulated input. [cJSON](https://github.com/DaveGamble/cJSON) by Dave Gamble and contributors (MIT) carries every plan, trajectory and request body. FatFs by ChaN, through ESP-IDF, is what makes a microSD card look like a filesystem.
+
+**To the hardware.** The Waveshare ESP32-P4-WIFI6-DEV-KIT is the board all of this runs on, and the MS2109 capture card in front of it is the agent's eyes.
+
+**To the model.** DeepSeek V4.1 flash — `deepseek-flash` in the configuration — is why this project has a second life. The loop became practical because its latency and its eyes both come from the model, and nothing in the harness had to change to accommodate it.
+
+**To the prior art.** PiKVM and the KVM-over-IP lineage established that a small board can sit between a person and a machine; the difference here is that the operator on the other end is a model rather than a human. Anthropic's computer-use work and OpenAI's operator are the software-side framing this project gets measured against, and the Python prototype's first model backend was Volcano Engine Ark.
+
+Thanking someone above implies nothing about what they endorse: none of these projects or vendors has any relationship with how you use this device. See [Caution](#caution).
+
 ------
 
 > *It doesn't read your memory, it doesn't occupy your device — it just quietly watches the screen, then presses the keyboard for you, just like a human would.*

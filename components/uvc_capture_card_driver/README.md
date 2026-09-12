@@ -4,6 +4,8 @@
 
 ## Overview
 
+**Provenance, because it is easy to lose:** 18 of the 20 `.c`/`.h` files here are Espressif's own UVC host code (`uvc_host`, `uvc_stream`, `uvc_bulk`, `uvc_isoc`, `uvc_control`, `uvc_frame`, the descriptor parsers, the private headers and `usb_types_uvc.h`), under Apache-2.0 with `SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD` in each file — those headers are retained deliberately and must stay. Only `uvc_capture_card_driver.c` and its header are this project's own wrapper, and they are the two files with no Espressif header.
+
 A USB Host UVC capture driver that strings the USB Host, the UVC stack and `sdmmc_driver` into one pipeline: a single call initializes the SD card, the USB Host and the UVC driver, then keeps one UVC stream permanently open while the caller pulls frames one at a time with a blocking call. VID/PID, resolution, frame rate, format and buffering are all supplied by the caller through `uvc_host_stream_config_t`; the component is not tied to any particular capture chip. The current project uses it with an MS2109 (`0x534D:0x2109`).
 
 ## API

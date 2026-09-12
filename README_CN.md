@@ -237,6 +237,18 @@ Victrl 使用 **Apache 2.0 License** 开源。本项目仅供研究、自动化�
 
 作者及贡献者不对因使用本软件产生的任何直接、间接、偶然、特殊或惩罚性损害承担责任，包括但不限于数据丢失、系统损坏、业务中断或违反第三方服务条款。
 
+## 特别致谢
+
+**站在这些开源项目之上。** 其中大部分来自[乐鑫](https://www.espressif.com/)：ESP-IDF 6.0.1、ESP-Hosted、esp_tinyusb，以及 `components/uvc_capture_card_driver` 所基于的 UVC host 协议栈——那个组件 20 个 `.c`/`.h` 里有 18 个是乐鑫自己的代码（Apache-2.0），且每个文件都还带着版权头，只有 `uvc_capture_card_driver.*` 这层封装是本项目的。[TinyUSB](https://github.com/hathach/tinyusb)（作者 hathach，MIT）是让键鼠成为真实外设而不是模拟输入的 USB 设备栈。[cJSON](https://github.com/DaveGamble/cJSON)（作者 Dave Gamble 及贡献者，MIT）承载了每一个计划、轨迹和请求体。ChaN 的 FatFs（经 ESP-IDF）让一张 microSD 卡看起来像一个文件系统。
+
+**硬件。** Waveshare ESP32-P4-WIFI6-DEV-KIT 是这一切所运行的板子，它前面那块 MS2109 采集卡是 agent 的眼睛。
+
+**模型。** DeepSeek V4.1 flash（配置里的 `deepseek-flash`）是这个项目获得第二次生命的原因：回路之所以变得可用，是因为它的延迟和它的眼睛都来自模型，而 harness 一行都不必为它改动。
+
+**先行者。** PiKVM 与 KVM-over-IP 这一脉证明了小板子可以插在人和机器之间；不同的是这里对面坐着的是模型而不是人。Anthropic 的 computer use 与 OpenAI 的 operator 是本项目被拿来比较的软件侧框架；Python 原型最早的模型后端是火山引擎方舟。
+
+致谢不意味着任何项目或厂商认可你如何使用这台设备——它们与你的用法没有任何关系。见[注意](#注意)。
+
 ------
 
 > *它不读取你的内存，不占据你的设备——它只是安静地看着屏幕，然后像人一样替你按下键盘。*

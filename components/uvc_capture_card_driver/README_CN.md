@@ -4,6 +4,8 @@
 
 ## 简介
 
+**关于来源，因为这一点很容易丢失：** 这里 20 个 `.c`/`.h` 中有 18 个是乐鑫自己的 UVC host 代码（`uvc_host`、`uvc_stream`、`uvc_bulk`、`uvc_isoc`、`uvc_control`、`uvc_frame`、描述符解析、各个私有头文件以及 `usb_types_uvc.h`），以 Apache-2.0 发布，每个文件都带 `SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD`——这些版权头是刻意保留的，必须留着。只有 `uvc_capture_card_driver.c` 与其头文件是本项目自己的封装，也就是仅有的两个不含乐鑫版权头的文件。
+
 USB Host UVC 采集驱动，把 USB Host、UVC 协议栈与 `sdmmc_driver` 串成一条流水线：一次调用完成 SD 卡、USB Host、UVC 驱动的初始化，随后常开一路 UVC 流，调用方以阻塞方式逐帧取图。VID/PID、分辨率、帧率、格式与缓冲区全部由调用方通过 `uvc_host_stream_config_t` 传入，组件本身不绑定任何特定采集芯片；当前项目用它接 MS2109（`0x534D:0x2109`）。
 
 ## API
