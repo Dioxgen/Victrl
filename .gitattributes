@@ -1,0 +1,22 @@
+# Byte-exactness matters in this repository.
+#
+# `sdcard/sysprompt/*.txt` is the prompt sent to the model verbatim, and the
+# API's prefix cache depends on it being byte-identical from run to run and
+# from machine to machine. `sdcard/web/index.html` and the SD-card config are
+# the same kind of artifact.
+#
+# With `core.autocrlf=true` (the Windows default) the working tree would carry
+# CRLF while the repository carries LF, so a clone on Linux would build a
+# subtly different prompt. Force LF everywhere instead: every editor and the
+# toolchain handle it.
+* text=auto eol=lf
+
+# Never normalise content that is not text.
+*.jpg   binary
+*.jpeg  binary
+*.png   binary
+*.gif   binary
+*.pdf   binary
+*.zip   binary
+*.bin   binary
+*.elf   binary
