@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Victrl Console</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font:14px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;background:#0d1117;color:#c9d1d9;min-height:100vh}
+header{background:#161b22;border-bottom:1px solid #30363d;padding:10px 20px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+header h1{font-size:17px;color:#58a6ff;font-weight:600;white-space:nowrap}
+.tabs{display:flex;gap:6px}
+.tab{padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;color:#8b949e;background:transparent;border:1px solid transparent}
+.tab:hover{color:#c9d1d9}
+.tab.active{background:#21262d;color:#58a6ff;border-color:#30363d}
+.state-badge{display:inline-block;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:700;letter-spacing:.04em}
+.state-IDLE{background:#30363d;color:#8b949e}
+.state-RUNNING{background:#0d4429;color:#3fb950}
+.state-PAUSED{background:#5c4300;color:#d29922}
+.state-STEP{background:#6e40c9;color:#d2a8ff}
+.state-EMERGENCY,.state-STOPPING{background:#490202;color:#f85149}
+main{padding:16px;max-width:1400px;margin:0 auto;display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.panel{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px 16px}
+.panel h2{font-size:14px;color:#58a6ff;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #21262d;font-weight:600}
+.span-all{grid-column:1/-1}
+.controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.controls input[type=text]{flex:1;min-width:220px;padding:8px 12px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-size:14px;font-family:inherit}
+.controls input::placeholder{color:#484f58}
+.btn{padding:7px 15px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:opacity .15s}
+.btn:hover{opacity:.85}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+.btn-start{background:#238636;color:#fff}
+.btn-pause{background:#9e6a03;color:#fff}
+.btn-resume{background:#1f6feb;color:#fff}
+.btn-step{background:#6e40c9;color:#fff}
+.btn-stop{background:#da3633;color:#fff}
+.btn-emergency{background:#f85149;color:#000;padding:9px 22px}
+.btn-plain{background:#21262d;color:#c9d1d9;border:1px solid #30363d}
+.btn-sm{padding:4px 10px;font-size:12px}
+.metric{display:flex;justify-content:space-between;gap:12px;padding:3px 0;border-bottom:1px solid #21262d}
+.metric:last-child{border-bottom:none}
+.metric .label{color:#8b949e}
+.metric .value{color:#c9d1d9;font-weight:600;text-align:right;word-break:break-all}
+.metric .value.good{color:#3fb950}
+.metric .value.warn{color:#d29922}
+.metric .value.bad{color:#f85149}
+.log-lines{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px;max-height:280px;overflow-y:auto;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-word}
+.timing-row{display:grid;grid-template-columns:88px 1fr 62px;gap:8px;align-items:center;padding:2px 0;font-size:12px}
+.timing-row .name{color:#8b949e}
+.timing-row .bar{background:#21262d;border-radius:3px;height:11px;overflow:hidden}
+.timing-row .bar span{display:block;height:100%;background:#1f6feb}
+.timing-row .bar span.hot{background:#d29922}
+.timing-row .bar span.worst{background:#f85149}
+.timing-row .ms{text-align:right;color:#c9d1d9;font-variant-numeric:tabular-nums}
+/* file manager */
+.fs-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.crumbs{font:12px ui-monospace,Consolas,monospace;color:#8b949e;flex:1;min-width:180px;word-break:break-all}
+.crumbs a{color:#58a6ff;cursor:pointer;text-decoration:none}
+.crumbs a:hover{text-decoration:underline}
+.fs-list{border:1px solid #30363d;border-radius:6px;overflow:hidden;max-height:340px;overflow-y:auto}
+.fs-item{display:grid;grid-template-columns:20px 1fr 90px auto;gap:8px;align-items:center;padding:7px 10px;border-bottom:1px solid #21262d;font-size:13px;cursor:pointer}
+.fs-item:last-child{border-bottom:none}
+.fs-item:hover{background:#1c2128}
+.fs-item .nm{word-break:break-all}
+.fs-item .sz{text-align:right;color:#8b949e;font-size:12px;font-variant-numeric:tabular-nums}
+.fs-item .del{color:#f85149;font-size:12px;padding:2px 6px;border-radius:4px;opacity:.6}
+.fs-item .del:hover{opacity:1;background:#490202}
+.fs-item.dir .nm{color:#58a6ff}
+.editor{margin-top:10px}
+.editor textarea{width:100%;height:420px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;padding:10px;font:12px/1.5 ui-monospace,Consolas,monospace;resize:vertical;white-space:pre;overflow-wrap:normal;overflow-x:auto}
+.editor-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.editor-head .path{font:12px ui-monospace,Consolas,monospace;color:#d29922;word-break:break-all}
+.hint{color:#8b949e;font-size:12px;margin-top:8px}
+.toast{position:fixed;right:18px;bottom:18px;background:#21262d;border:1px solid #30363d;border-left:3px solid #58a6ff;border-radius:6px;padding:10px 16px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:70vw;z-index:9}
+.toast.show{opacity:1}
+.toast.err{border-left-color:#f85149}
+.hidden{display:none!important}
+/* Dashboard panels must be direct grid items, so the wrapper itself generates
+   no box. Hiding it therefore needs !important to beat display:contents. */
+#viewDash{display:contents}
+.view-off{display:none!important}
+</style>
+</head>
+<body>
+<header>
+  <h1>Victrl Console</h1>
+  <div class="tabs">
+    <div class="tab active" id="tabDash" onclick="showTab('dash')">Dashboard</div>
+    <div class="tab" id="tabSessions" onclick="showTab('sessions')">会话</div>
+    <div class="tab" id="tabFiles" onclick="showTab('files')">SD 卡文件</div>
+  </div>
+  <span id="stateBadge" class="state-badge state-IDLE">IDLE</span>
+</header>
+
+<main>
+  <!-- ══ Dashboard ══ -->
+  <section id="viewDash">
+    <div class="panel span-all">
+      <h2>任务控制</h2>
+      <div class="controls">
+        <input type="text" id="taskInput" placeholder="输入任务，例如：打开记事本并输入 Hello World">
+        <button class="btn btn-start" id="btnStart" onclick="startTask()">Start</button>
+        <button class="btn btn-pause" id="btnPause" onclick="api('/api/pause','POST').then(refresh)">Pause</button>
+        <button class="btn btn-resume" id="btnResume" onclick="api('/api/resume','POST').then(refresh)">Resume</button>
+        <button class="btn btn-step" id="btnStep" onclick="api('/api/step','POST').then(refresh)">Step</button>
+        <button class="btn btn-stop" id="btnStop" onclick="api('/api/stop','POST').then(refresh)">Stop</button>
+        <button class="btn btn-emergency" id="btnEmergency" onclick="emergencyStop()">急停</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>系统</h2>
+      <div id="sysInfo"></div>
+    </div>
+
+    <div class="panel">
+      <h2>网络与时间</h2>
+      <div id="netTimeInfo"></div>
+    </div>
+
+    <div class="panel span-all">
+      <h2>画面预览 <span class="hint" id="snapInfo"></span></h2>
+      <div class="controls" style="margin-bottom:8px">
+        <button class="btn btn-plain btn-sm" onclick="snapLoad()">刷新</button>
+        <label class="hint" style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="snapLive" onchange="snapToggle()">
+          实时画面（不勾选＝模型当前看到的那一张）
+        </label>
+      </div>
+      <img id="snapImg" alt="snapshot"
+           style="max-width:100%;border:1px solid #30363d;border-radius:6px;display:block">
+      <div class="hint">
+        未勾选时显示的是<strong>模型实际收到的那张图</strong>（已按 <code>next_view</code> 裁切/缩放）。
+        用它核对 ROI 是否切到了你以为的区域——这是验证坐标映射最直接的手段。
+      </div>
+    </div>
+
+    <div class="panel span-all">
+      <h2>上一步耗时分解</h2>
+      <div id="timingInfo"><span class="hint">尚无已完成步骤</span></div>
+    </div>
+
+    <div class="panel">
+      <h2>计划</h2>
+      <div id="planInfo"></div>
+    </div>
+
+    <div class="panel">
+      <h2>运行日志</h2>
+      <div class="log-lines" id="logLines">加载中…</div>
+    </div>
+  </section>
+
+  <!-- ══ Files ══ -->
+  <section id="viewFiles" class="span-all view-off">
+    <div class="panel">
+      <h2>SD 卡文件管理</h2>
+      <div class="fs-bar">
+        <button class="btn btn-plain btn-sm" onclick="fsOpen(FS_ROOT)">根目录</button>
+        <button class="btn btn-plain btn-sm" onclick="fsGoto('config.json')">config.json</button>
+        <button class="btn btn-plain btn-sm" onclick="fsGoto('sysprompt/full.txt')">sysprompt/full.txt</button>
+        <button class="btn btn-plain btn-sm" onclick="fsGoto('sysprompt/short.txt')">sysprompt/short.txt</button>
+        <button class="btn btn-plain btn-sm" onclick="fsGoto('web/index.html')">web/index.html</button>
+        <button class="btn btn-plain btn-sm" onclick="fsMkdir()">新建目录</button>
+        <button class="btn btn-plain btn-sm" onclick="fsNewFile()">新建文件</button>
+        <button class="btn btn-plain btn-sm" onclick="fsOpen(fsDir)">刷新</button>
+      </div>
+      <div class="crumbs" id="fsCrumbs">/sdcard</div>
+      <div class="fs-list" id="fsList"></div>
+      <div class="hint">
+        保存 <code>config.json</code> 后需要重启才会生效 ——
+        <button class="btn btn-plain btn-sm" onclick="reboot()">重启设备</button>
+      </div>
+
+      <div class="editor hidden" id="fsEditor">
+        <div class="editor-head">
+          <span class="path" id="fsEditPath"></span>
+          <span>
+            <span class="hint" id="fsDirty"></span>
+            <button class="btn btn-start btn-sm" onclick="fsSave()">保存</button>
+            <button class="btn btn-plain btn-sm" onclick="fsCloseEditor()">关闭</button>
+          </span>
+        </div>
+        <textarea id="fsText" spellcheck="false"></textarea>
+      </div>
+    </div>
+  </section>
+  <!-- ══ Sessions ══ -->
+  <section id="viewSessions" class="span-all view-off">
+    <div class="panel">
+      <h2>会话（对话窗口）</h2>
+      <div class="hint" style="margin-bottom:8px">
+        每个会话是一个独立上下文：自己的任务目标、计划、以及逐轮轨迹。
+        轨迹是模型记忆的全部——<strong>不含历史截图</strong>（对 GUI Agent 来说上一帧已经失效，
+        而重传每轮要多花约 160KB 上行）。
+      </div>
+      <div class="fs-bar">
+        <button class="btn btn-plain btn-sm" onclick="sessionsLoad()">刷新</button>
+        <span class="hint" id="sesCurrent"></span>
+      </div>
+      <div class="fs-list" id="sesList"></div>
+    </div>
+
+    <div class="panel">
+      <h2>当前会话的轨迹（模型上下文）</h2>
+      <div class="editor-head">
+        <span class="path" id="trajInfo"></span>
+        <span>
+          <span class="hint" id="trajDirty"></span>
+          <button class="btn btn-start btn-sm" onclick="trajSave()">保存</button>
+          <button class="btn btn-plain btn-sm" onclick="trajLoad()">重新载入</button>
+        </span>
+      </div>
+      <textarea id="trajText" spellcheck="false" style="height:360px"></textarea>
+      <div class="hint">
+        可以直接编辑——比如删掉跑偏的几步、或把手写的提示补进去。保存后从下一步开始生效。
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API="", FS_ROOT="/sdcard";
+let fsDir=FS_ROOT, fsPath=null, fsOriginal="";
+
+/* ── helpers ─────────────────────────────────────────────────────── */
+function toast(msg,isErr){
+  const t=document.getElementById("toast");
+  t.textContent=msg; t.className="toast show"+(isErr?" err":"");
+  clearTimeout(t._h); t._h=setTimeout(()=>t.className="toast",2600);
+}
+async function api(path,method="GET",body=null){
+  const opts={method,headers:{"Content-Type":"application/json"}};
+  // The SD write endpoint takes up to 128KB; posting it must not be cancelled.
+  if(body)opts.body=JSON.stringify(body);
+  try{
+    const r=await fetch(API+path,opts);
+    const txt=await r.text();
+    try{ return JSON.parse(txt); }catch(e){ return {ok:false,error:txt.slice(0,200)}; }
+  }catch(e){ return {error:String(e)}; }
+}
+function metric(label,value,cls){
+  return '<div class="metric"><span class="label">'+label+
+         '</span><span class="value'+(cls?" "+cls:"")+'">'+value+'</span></div>';
+}
+function fmtBytes(n){
+  if(n===undefined||n===null)return "-";
+  if(n>=1048576)return (n/1048576).toFixed(1)+" MB";
+  if(n>=1024)return (n/1024).toFixed(1)+" KB";
+  return n+" B";
+}
+function fmtDur(s){
+  if(s===undefined||s===null)return "-";
+  s=Math.floor(s);
+  if(s<60)return s+"s";
+  if(s<3600)return Math.floor(s/60)+"m"+(s%60)+"s";
+  return Math.floor(s/3600)+"h"+Math.floor((s%3600)/60)+"m";
+}
+
+/* ── tabs ────────────────────────────────────────────────────────── */
+let activeTab="dash";
+function showTab(which){
+  activeTab=which;
+  document.getElementById("tabDash").classList.toggle("active",which==="dash");
+  document.getElementById("tabSessions").classList.toggle("active",which==="sessions");
+  document.getElementById("tabFiles").classList.toggle("active",which==="files");
+  document.getElementById("viewDash").classList.toggle("view-off",which!=="dash");
+  document.getElementById("viewSessions").classList.toggle("view-off",which!=="sessions");
+  document.getElementById("viewFiles").classList.toggle("view-off",which!=="files");
+  if(which==="files")fsOpen(fsDir);
+  if(which==="sessions"){sessionsLoad();trajLoad();}
+}
+
+/* ── dashboard ───────────────────────────────────────────────────── */
+async function refresh(){
+  const s=await api("/api/status");
+  if(s.error){toast("状态获取失败: "+s.error,true);return;}
+  renderState(s);
+  renderButtons(s.state);
+
+  const h=s.heap||{};
+  document.getElementById("sysInfo").innerHTML=
+    metric("Agent 状态",s.state)+
+    metric("步骤",s.actions+" / "+s.max_actions)+
+    metric("连续失败",s.fails,s.fails?"warn":"")+
+    metric("等待模式",s.wait_mode?"是（屏幕未变，暂不调用 API）":"否",s.wait_mode?"good":"")+
+    metric("推理强度",(s.effort||"-")+(s.stuck_streak>0?" （已卡住 "+s.stuck_streak+" 步，已升级）":""),
+           s.stuck_streak>0?"warn":"good")+
+    metric("当前 Profile",s.profile||"(未加载)",s.profile?"":"warn")+
+    metric("当前会话",(s.session||"(无)"),s.session?"":"warn")+
+    metric("内部 RAM 空闲",fmtBytes(h.internal&&h.internal.free)+
+           " <span style='color:#8b949e'>(最大块 "+fmtBytes(h.internal&&h.internal.largest)+")</span>")+
+    metric("PSRAM 空闲",fmtBytes(h.psram&&h.psram.free))+
+    (s.fs?metric("SD 卡",fmtBytes((s.fs.total_kb-s.fs.free_kb)*1024)+" 已用 / "+fmtBytes(s.fs.total_kb*1024)+" 共"):"")+
+    metric("复位原因",s.reset_reason);
+
+  const w=s.wifi||{}, t=s.time||{};
+  const rssi=w.rssi||0;
+  const rssiCls=!w.connected?"bad":(rssi>-60?"good":rssi>-75?"warn":"bad");
+  document.getElementById("netTimeInfo").innerHTML=
+    metric("WiFi",w.connected?"已连接":"未连接",w.connected?"good":"bad")+
+    metric("IP",w.ip)+
+    metric("MAC",w.mac||"-")+
+    metric("信号强度",w.connected?rssi+" dBm":"-",rssiCls)+
+    metric("设备时间",t.local,t.synced?"good":"warn")+
+    metric("NTP 同步",t.synced?("已同步 · 成功 "+t.sync_count+" 次"):"未同步",
+           t.synced?"good":"bad")+
+    metric("上次同步",t.since_sync_s!==undefined?fmtDur(t.since_sync_s)+" 前":"从未")+
+    metric("NTP 服务器",(t.servers||[]).join(", ")||"-")+
+    metric("运行时长",fmtDur(t.uptime_s));
+
+  renderTiming(s.last_step);
+  renderPlan(await api("/api/plan"));
+  const l=await api("/api/log");
+  document.getElementById("logLines").textContent=l.log||"(暂无日志)";
+}
+
+function renderState(s){
+  const b=document.getElementById("stateBadge");
+  b.textContent=s.state||"IDLE";
+  b.className="state-badge state-"+(s.state||"IDLE");
+}
+function renderButtons(state){
+  const map={btnStart:["IDLE"],btnPause:["RUNNING"],btnResume:["PAUSED"],
+             btnStep:["PAUSED"],btnStop:["RUNNING","PAUSED"],
+             btnEmergency:["RUNNING","PAUSED"]};
+  for(const[id,states]of Object.entries(map)){
+    document.getElementById(id).disabled=!states.includes(state);
+  }
+}
+function renderTiming(t){
+  const box=document.getElementById("timingInfo");
+  if(!t){box.innerHTML='<span class="hint">尚无已完成步骤</span>';return;}
+  const rows=[
+    ["capture",t.capture_ms,"UVC 抓帧"],
+    ["jpeg",t.jpeg_ms,"JPEG 处理合计"],
+    ["·setup",t.jpeg_setup_ms,"编解码器/缓冲区建立（已缓存，应≈0）"],
+    ["·decode",t.jpeg_decode_ms,"硬件全分辨率解码"],
+    ["·resample",t.jpeg_resample_ms,"软件裁切+缩放（PPA 可替代的部分）"],
+    ["·encode",t.jpeg_encode_ms,"硬件重编码"],
+    ["base64",t.base64_ms,"Base64"],
+    ["json",t.json_ms,"JSON 序列化"],
+    ["connect",t.connect_ms,"TCP+TLS（0 = 复用长连接）"],
+    ["http",t.http_ms,"HTTP 全程（含服务端推理）"],
+    ["parse",t.parse_ms,"响应解析"],
+    ["sdlog",t.sdlog_ms,"任务日志落盘"],
+    ["exec",t.exec_ms,"HID 动作执行"],
+    ["sleep",t.sleep_ms,"sleep_before_next"],
+  ];
+  const total=t.total_ms||1;
+  let h='<div class="hint" style="margin-bottom:8px">第 '+t.step+
+        ' 步，总计 <strong style="color:#c9d1d9">'+total+' ms</strong>'+
+        '（其中 HTTP 占 '+Math.round(100*(t.http_ms||0)/total)+'%）</div>';
+  const max=Math.max(...rows.map(r=>r[1]||0),1);
+  rows.forEach(([name,ms,desc])=>{
+    ms=ms||0;
+    const pct=Math.max(1,Math.round(100*ms/max));
+    const cls=ms===max?"worst":(ms*3>max?"hot":"");
+    h+='<div class="timing-row" title="'+desc+'">'+
+       '<span class="name">'+name+'</span>'+
+       '<span class="bar"><span class="'+cls+'" style="width:'+pct+'%"></span></span>'+
+       '<span class="ms">'+ms+' ms</span></div>';
+  });
+  box.innerHTML=h;
+}
+function renderPlan(p){
+  const box=document.getElementById("planInfo");
+  if(!p||!p.milestones||!p.milestones.length){
+    box.innerHTML='<span class="hint">暂无计划</span>';return;
+  }
+  let h="";
+  if(p.task_goal)h+='<div class="metric"><span class="label">目标</span><span class="value">'+esc(p.task_goal)+'</span></div>';
+  if(p.plan_update&&p.plan_update.summary)
+    h+='<div style="margin:8px 0"><strong>'+esc(p.plan_update.summary)+'</strong></div>';
+  h+="<ul style='margin-left:18px'>";
+  p.milestones.forEach(m=>{
+    const color=m.status==="done"?"#3fb950":m.status==="in_progress"?"#d29922":
+                m.status==="blocked"?"#f85149":"#8b949e";
+    h+='<li style="color:'+color+'">#'+m.id+' ['+esc(m.status)+'] '+esc(m.description)+'</li>';
+  });
+  box.innerHTML=h+"</ul>";
+}
+function esc(s){
+  return String(s===undefined||s===null?"":s)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;");
+}
+function startTask(){
+  const t=document.getElementById("taskInput").value.trim();
+  if(!t)return toast("请输入任务",true);
+  api("/api/start","POST",{task:t}).then(r=>{
+    if(r.ok){toast("任务已启动");refresh();}else toast("启动失败: "+(r.error||""),true);
+  });
+}
+function emergencyStop(){
+  if(confirm("确认急停？将立即释放所有 HID 按键并回到 IDLE。"))
+    api("/api/emergency","POST").then(()=>{toast("已急停");refresh();});
+}
+function reboot(){
+  if(!confirm("确认重启设备？"))return;
+  api("/api/reboot","POST").then(()=>toast("正在重启…"));
+}
+
+/* ── file manager ────────────────────────────────────────────────── */
+async function fsOpen(path){
+  fsDir=path||FS_ROOT;
+  const r=await api("/api/fs?path="+encodeURIComponent(fsDir));
+  if(!r.entries){toast("读取目录失败: "+(r.error||""),true);return;}
+  crumbs(fsDir);
+  const list=document.getElementById("fsList");
+  list.textContent="";
+  if(!r.entries.length){
+    const d=document.createElement("div");
+    d.className="fs-item"; d.innerHTML='<span></span><span class="nm hint">(空目录)</span><span></span><span></span>';
+    list.appendChild(d);
+  }
+  r.entries.forEach(e=>{
+    const row=document.createElement("div");
+    row.className="fs-item"+(e.type==="dir"?" dir":"");
+    const ic=document.createElement("span");
+    ic.textContent=e.type==="dir"?"📁":"📄";
+    const nm=document.createElement("span");
+    nm.className="nm"; nm.textContent=e.name;          // textContent: no HTML injection
+    const sz=document.createElement("span");
+    sz.className="sz"; sz.textContent=e.type==="dir"?"":fmtBytes(e.size);
+    const del=document.createElement("span");
+    del.className="del"; del.textContent="删除";
+    del.onclick=ev=>{ev.stopPropagation();fsDelete(e.name);};
+    row.append(ic,nm,sz,del);
+    row.onclick=()=>{ e.type==="dir" ? fsOpen(join(fsDir,e.name)) : fsRead(join(fsDir,e.name)); };
+    list.appendChild(row);
+  });
+  if(r.truncated)toast("目录条目过多，仅显示前 64 项",true);
+}
+function join(dir,name){ return dir==="/"?"/"+name:dir+"/"+name; }
+/* Breadcrumb built as DOM nodes: file names may contain quotes, and an inline
+   onclick="fsOpen('...')" would break (or worse) on such a name. */
+function crumbs(path){
+  const box=document.getElementById("fsCrumbs");
+  box.textContent="";
+  const mkLink=(text,onclick)=>{const a=document.createElement("a");a.textContent=text;a.onclick=onclick;return a;};
+  box.appendChild(mkLink("/sdcard",()=>fsOpen(FS_ROOT)));
+  const parts=path.split("/").filter(Boolean);
+  let acc="";
+  parts.forEach((p,i)=>{
+    if(i===0)return;                       // "sdcard" itself
+    acc+="/"+p;
+    const target=FS_ROOT+acc;
+    box.appendChild(document.createTextNode(" / "));
+    box.appendChild(mkLink(p,()=>fsOpen(target)));
+  });
+}
+async function fsRead(path){
+  const r=await fetch(API+"/api/fs/read?path="+encodeURIComponent(path));
+  const txt=await r.text();
+  if(!r.ok){ let m=txt; try{m=JSON.parse(txt).error;}catch(e){} toast("打开失败: "+m,true); return; }
+  fsPath=path; fsOriginal=txt;
+  document.getElementById("fsEditPath").textContent=path;
+  document.getElementById("fsDirty").textContent="";
+  document.getElementById("fsText").value=txt;
+  document.getElementById("fsEditor").classList.remove("hidden");
+  document.getElementById("fsText").focus();
+}
+function fsCloseEditor(){
+  if(fsPath && document.getElementById("fsText").value!==fsOriginal &&
+     !confirm("有未保存的修改，仍然关闭？"))return;
+  fsPath=null; fsOriginal="";
+  document.getElementById("fsEditor").classList.add("hidden");
+}
+async function fsSave(){
+  if(!fsPath)return;
+  const content=document.getElementById("fsText").value;
+  const r=await api("/api/fs/write","POST",{path:fsPath,content:content});
+  if(r.ok){ fsOriginal=content; document.getElementById("fsDirty").textContent="已保存";
+            toast("已保存 "+fsPath); }
+  else toast("保存失败: "+(r.error||""),true);
+}
+async function fsDelete(name){
+  const p=join(fsDir,name);
+  if(!confirm("删除 "+p+" ？"))return;
+  const r=await api("/api/fs/delete","POST",{path:p});
+  if(r.ok){toast("已删除");fsOpen(fsDir);}else toast("删除失败: "+(r.error||""),true);
+}
+async function fsMkdir(){
+  const n=prompt("新目录名：");
+  if(!n)return;
+  const r=await api("/api/fs/mkdir","POST",{path:join(fsDir,n)});
+  if(r.ok){toast("已创建");fsOpen(fsDir);}else toast("创建失败: "+(r.error||""),true);
+}
+function fsNewFile(){
+  const n=prompt("新文件名（例如 notes.txt）：");
+  if(!n)return;
+  const p=join(fsDir,n);
+  api("/api/fs/write","POST",{path:p,content:""}).then(r=>{
+    if(r.ok){toast("已创建");fsOpen(fsDir).then(()=>fsRead(p));}
+    else toast("创建失败: "+(r.error||""),true);
+  });
+}
+function fsGoto(rel){ fsRead(join(FS_ROOT,rel)); }
+
+/* ── sessions ────────────────────────────────────────────────────── */
+let sesCurrentId="", trajOriginal="";
+
+async function sessionsLoad(){
+  const r=await api("/api/sessions");
+  if(!r.sessions){toast("会话列表获取失败",true);return;}
+  sesCurrentId=r.current||"";
+  document.getElementById("sesCurrent").textContent =
+    "当前："+(r.current||"(无)")+" · 目标："+(r.current_goal||"-")+" · 第 "+(r.current_steps||0)+" 步";
+
+  const list=document.getElementById("sesList");
+  list.textContent="";
+  if(!r.sessions.length){
+    const d=document.createElement("div");
+    d.className="fs-item";
+    d.innerHTML='<span></span><span class="nm hint">(还没有会话，输入任务并 Start 就会创建一个)</span><span></span><span></span>';
+    list.appendChild(d);
+    return;
+  }
+  r.sessions.forEach(s=>{
+    const row=document.createElement("div");
+    row.className="fs-item"+(s.id===r.current?" dir":"");
+    const ic=document.createElement("span");
+    ic.textContent=s.id===r.current?"●":"○";
+    const nm=document.createElement("span");
+    nm.className="nm";
+    nm.textContent=s.title||s.goal||s.id;      // textContent: safe
+    const meta=document.createElement("span");
+    meta.className="sz";
+    meta.textContent=s.steps+" 步 · "+fmtBytes(s.traj_bytes);
+    const acts=document.createElement("span");
+
+    const mk=(label,cls,fn)=>{const b=document.createElement("span");
+      b.className="del "+cls; b.textContent=label;
+      b.onclick=ev=>{ev.stopPropagation();fn();}; return b;};
+    acts.appendChild(mk("继续","",()=>sessionContinue(s.id)));
+    acts.appendChild(mk("改名","",()=>sessionRename(s.id,s.title)));
+    acts.appendChild(mk("删除","",()=>sessionDelete(s.id)));
+
+    row.append(ic,nm,meta,acts);
+    row.title=s.id+"  "+(s.created||"");
+    row.onclick=()=>sessionSelect(s.id);
+    list.appendChild(row);
+  });
+}
+
+async function sessionSelect(id){
+  const r=await api("/api/sessions/select","POST",{id});
+  if(!r.ok){toast("切换失败: "+(r.error||""),true);return;}
+  toast("已切换到 "+id);
+  await sessionsLoad(); await trajLoad(); refresh();
+}
+
+async function sessionContinue(id){
+  /* Continuing loads the session AND runs it. */
+  const r=await api("/api/start","POST",{session:id});
+  if(!r.ok){toast("继续失败: "+(r.error||""),true);return;}
+  toast("已继续会话 "+id);
+  await sessionsLoad(); refresh();
+}
+
+async function sessionDelete(id){
+  if(!confirm("删除会话 "+id+" ？其计划与轨迹会一起删除（SD 卡上的任务日志保留）。"))return;
+  const r=await api("/api/sessions/delete","POST",{id});
+  if(!r.ok){toast("删除失败: "+(r.error||""),true);return;}
+  toast("已删除");
+  await sessionsLoad(); await trajLoad();
+}
+
+async function sessionRename(id,cur){
+  const t=prompt("新的会话名称：",cur||"");
+  if(!t)return;
+  const r=await api("/api/sessions/rename","POST",{id,title:t});
+  if(!r.ok){toast("改名失败: "+(r.error||""),true);return;}
+  sessionsLoad();
+}
+
+async function trajLoad(){
+  const r=await fetch(API+"/api/sessions/trajectory");
+  const txt=await r.text();
+  trajOriginal=txt;
+  document.getElementById("trajText").value=txt;
+  document.getElementById("trajInfo").textContent =
+    "共 "+txt.length+" 字符（上限 24576，超出会自动裁掉最早的几步）";
+  document.getElementById("trajDirty").textContent="";
+}
+
+async function trajSave(){
+  const content=document.getElementById("trajText").value;
+  const r=await api("/api/sessions/trajectory","POST",{content});
+  if(r.ok){trajOriginal=content;toast("轨迹已保存");document.getElementById("trajDirty").textContent="已保存";}
+  else toast("保存失败: "+(r.error||""),true);
+}
+
+/* ── snapshot preview ────────────────────────────────────────────── */
+let snapTimer=null;
+
+function snapLoad(){
+  const live=document.getElementById("snapLive").checked;
+  const img=document.getElementById("snapImg");
+  const info=document.getElementById("snapInfo");
+  img.onload=()=>{
+    info.textContent=(live?"实时画面":"模型看到的那张")+" · "+
+                     img.naturalWidth+"×"+img.naturalHeight;
+  };
+  img.onerror=()=>{ info.textContent="（暂无画面 —— 还没有向模型发送过截图）"; };
+  img.src=API+"/api/snapshot"+(live?"?live=1&t=":"?t=")+Date.now();
+}
+
+function snapToggle(){
+  const live=document.getElementById("snapLive").checked;
+  if(snapTimer){clearInterval(snapTimer);snapTimer=null;}
+  if(live)snapTimer=setInterval(snapLoad,3000);
+  snapLoad();
+}
+
+/* ── boot ────────────────────────────────────────────────────────── */
+document.getElementById("trajText").addEventListener("input",()=>{
+  document.getElementById("trajDirty").textContent =
+    document.getElementById("trajText").value===trajOriginal ? "" : "未保存";
+});
+document.getElementById("fsText").addEventListener("input",()=>{
+  document.getElementById("fsDirty").textContent =
+    document.getElementById("fsText").value===fsOriginal ? "" : "未保存";
+});
+refresh();
+/* Poll only while the dashboard is visible. */
+setInterval(()=>{ if(activeTab==="dash") refresh(); },2000);
+</script>
+</body>
+</html>

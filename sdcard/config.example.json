@@ -1,0 +1,71 @@
+{
+    "_comment": "Victrl ESP32-P4 configuration TEMPLATE. Copy to config.json and fill in the two credential fields. config.json is git-ignored on purpose: it holds a live API key and your WiFi password.",
+
+    "uvc": {
+        "capture_width": 1920,
+        "capture_height": 1080,
+        "output_width": 1920,
+        "output_height": 1080
+    },
+
+    "api": {
+        "_comment": "endpoint is used verbatim as the request URL, so the path suffix is required. Get a key at https://platform.deepseek.com/",
+        "endpoint": "https://api.deepseek.com/responses",
+        "key": "YOUR-API-KEY-HERE",
+        "model_name": "deepseek-flash",
+        "timeout": 120,
+        "max_retries": 3,
+        "max_output_tokens": 16384,
+        "enable_thinking": true,
+        "_comment_effort": "Adaptive reasoning effort. Routine steps use reasoning_effort; the agent escalates to reasoning_effort_escalated once it has been stuck for effort_escalate_after consecutive steps (stuck = the last action produced no visible screen change, or the same action type keeps repeating). The API call is 60-85% of a step's wall clock and reasoning tokens are 30-50% of output, so this is the largest latency lever. Set both to the same value to disable adaptivity.",
+        "reasoning_effort": "low",
+        "reasoning_effort_escalated": "high",
+        "effort_escalate_after": 1,
+        "_comment_upload_max_dim": "0 = pass the MS2109 MJPEG frame through untouched (no decode, no re-encode - cheapest). >0 = decode, box-downscale the longest edge to this value, re-encode. NOTE the ESP32-P4 hardware decoder cannot scale, so downscaling is a software pass and costs a full-resolution decode plus ~6MB of PSRAM.",
+        "upload_max_dim": 0,
+        "_comment_save_frames": "write every captured frame to the SD card. Costs a ~150-250KB blocking write per step, so off by default.",
+        "save_frames": false
+    },
+
+    "agent": {
+        "max_actions": 100,
+        "history_max_len": 10,
+        "_comment_system_prompt_interval": "0 = never rotate (always send the full prompt). Rotation saves a few hundred tokens but invalidates the API's prefix cache, which is a bad trade.",
+        "system_prompt_interval": 0,
+        "_comment_wait_skip": "need_screen v2. When the model reports a wait-only step with need_screen=false AND the frame fingerprint proves the screen is unchanged, the harness stops calling the API until something moves. Leave false until you have confirmed the fingerprint really does stop changing on a static screen (watch for the 'Screen unchanged since last query' log line).",
+        "allow_wait_skip": false,
+        "max_blind_rounds": 3,
+        "wait_settle_ms": 1000
+    },
+
+    "hid": {
+        "_comment": "Typing is a control channel, not a benchmark: one dropped character costs a whole model round trip plus a recovery sequence. These are accuracy parameters. If characters are still lost, raise type_gap_ms first.",
+        "type_hold_ms": 15,
+        "type_gap_ms": 35,
+        "type_jitter_ms": 25,
+        "type_word_pause_ms": 120,
+        "_comment_run": "The `run` action performs Win+R -> type -> Enter itself, then checks whether the screen actually changed and presses Enter once more if it did not (a right-after-typing Enter is often swallowed by the Run dialog's autocomplete, or by an IME committing a composition). run_dialog_ms is how long the Run dialog needs before it accepts input; run_settle_ms is the pause after typing and before Enter.",
+        "run_dialog_ms": 500,
+        "run_settle_ms": 400
+    },
+
+    "paths": {
+        "_comment": "session_dir holds one directory per conversation window (meta.json / plan.json / trajectory.txt). plan_dir is kept only for compatibility — each session owns its own plan now.",
+        "session_dir": "/sdcard/sessions",
+        "profile_dir": "/sdcard/profiles",
+        "plan_dir": "/sdcard/plans",
+        "default_profile": "win11_laptop",
+        "log_dir": "/sdcard/log",
+        "sysprompt_dir": "/sdcard/sysprompt",
+        "web_dir": "/sdcard/web"
+    },
+
+    "http": {
+        "port": 80
+    },
+
+    "wifi": {
+        "ssid": "YOUR-WIFI-SSID",
+        "password": "YOUR-WIFI-PASSWORD"
+    }
+}

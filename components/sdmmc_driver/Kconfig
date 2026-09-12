@@ -1,0 +1,83 @@
+menu "SDMMC Driver"
+
+    config SDMMC_DRV_CLK_PIN
+        int "SDMMC CLK pin"
+        default 43
+        help
+            GPIO number for the SDMMC clock signal.
+            Default (43) is for ESP32-P4-WIFI6-DEV-KIT.
+
+    config SDMMC_DRV_CMD_PIN
+        int "SDMMC CMD pin"
+        default 44
+        help
+            GPIO number for the SDMMC command signal.
+
+    config SDMMC_DRV_D0_PIN
+        int "SDMMC D0 pin"
+        default 39
+        help
+            GPIO number for SDMMC data line 0.
+
+    config SDMMC_DRV_D1_PIN
+        int "SDMMC D1 pin"
+        default 40
+        help
+            GPIO number for SDMMC data line 1.  Ignored in 1-bit mode.
+
+    config SDMMC_DRV_D2_PIN
+        int "SDMMC D2 pin"
+        default 41
+        help
+            GPIO number for SDMMC data line 2.  Ignored in 1-bit mode.
+
+    config SDMMC_DRV_D3_PIN
+        int "SDMMC D3 pin"
+        default 42
+        help
+            GPIO number for SDMMC data line 3.  Ignored in 1-bit mode.
+
+    config SDMMC_DRV_BUS_WIDTH
+        int "SDMMC bus width (1 or 4)"
+        range 1 4
+        default 4
+        help
+            Number of data lines to use.  Use 1 for reduced pin count,
+            4 for maximum throughput.
+
+    config SDMMC_DRV_MAX_FREQ_KHZ
+        int "Maximum SDMMC clock frequency (kHz)"
+        default 40000
+        help
+            SDMMC host frequency.  40000 = 40 MHz (high-speed).
+            Lower to 20000 if signal integrity is marginal.
+
+    config SDMMC_DRV_FORMAT_IF_MOUNT_FAILED
+        bool "Auto-format SD card if mount fails"
+        default y
+
+    config SDMMC_DRV_MOUNT_POINT
+        string "SD card mount point"
+        default "/sdcard"
+
+    config SDMMC_DRV_MAX_FILES
+        int "Maximum open files on SD card"
+        default 5
+
+    config SDMMC_DRV_ALLOC_UNIT_SIZE
+        int "FAT allocation unit size (bytes)"
+        default 16384
+
+    config SDMMC_DRV_LDO_ENABLE
+        bool "Enable on-chip LDO for SD slot power"
+        default y
+        help
+            Set to y on ESP32-P4-WIFI6-DEV-KIT (has internal LDO).
+            Set to n on boards without on-chip SD-slot LDO.
+
+    config SDMMC_DRV_LDO_CHAN_ID
+        int "LDO channel ID"
+        depends on SDMMC_DRV_LDO_ENABLE
+        default 4
+
+endmenu  # SDMMC Driver

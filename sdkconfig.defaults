@@ -1,0 +1,28 @@
+CONFIG_IDF_TARGET="esp32p4"
+CONFIG_SPIRAM=y
+CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=3000
+CONFIG_USB_HOST_HW_BUFFER_BIAS_IN=y
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=255
+CONFIG_FATFS_FS_LOCK=4
+CONFIG_FATFS_TIMEOUT_MS=10000
+CONFIG_FREERTOS_HZ=1000
+
+# --- SNTP / time ---------------------------------------------------------
+# MAX_SERVERS must be >1 or esp_sntp_setservername(1, ...) is silently
+# ignored. The default of 1 meant only pool.ntp.org was ever tried, which is
+# unreachable from many Chinese networks and made boot-time sync time out.
+CONFIG_LWIP_SNTP_MAX_SERVERS=3
+# Do not delay the first request by up to MAXIMUM_STARTUP_DELAY ms: we sync
+# once at boot and want it to happen immediately.
+# CONFIG_LWIP_SNTP_STARTUP_DELAY is not set
+
+# --- HTTP server (WebUI file manager) ------------------------------------
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
+CONFIG_HTTPD_MAX_URI_LEN=512
+
+# --- Task stacks ---------------------------------------------------------
+# app_main holds a runtime_config_t (~1KB), an agent_ctx_t (~600B) and drives
+# session/plan/profile/cJSON setup, which overflowed the 3584-byte default
+# (stack protection fault right after "creating a placeholder window").
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192

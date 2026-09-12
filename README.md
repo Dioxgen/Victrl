@@ -1,157 +1,288 @@
 # Victrl
 
-## Bringing automation back to the most primitive way: See, Click, See
+## Bringing automation back to the most primitive way: **see, click, see**
 
-> [[中文](README_CN.md)|English]
+> [English|[中文](README_CN.md)]
 
-![github license](https://img.shields.io/github/license/Dioxgen/Victrl) ![Language](https://img.shields.io/badge/language-python/C++-brightgreen) ![](https://img.shields.io/badge/Platform-Win/MacOS/Linux/Android/ICS-blue) ![](https://img.shields.io/badge/Version-2.1-red)
+![license](https://img.shields.io/badge/license-Apache%202.0-blue) ![language](https://img.shields.io/badge/language-C%20(ESP--IDF)-brightgreen) ![platform](https://img.shields.io/badge/platform-ESP32--P4-red) ![agent](https://img.shields.io/badge/agent%20loop-on--device-orange)
 
-Today's AI Agents rely on software-level configuration on the target device to control it. Victrl aims to build *a single hardware-only AI Agent device independent of the controlled system*, achieving plug-and-play automation for any device through a human-like "UVC visual input + HID output" approach.
-
-Victrl does not rely on OS APIs, Accessibility, ADB, VNC, RDP… Instead, it fully simulates the "human using a computer" process:
+Today's AI agents depend on software-level access to the target device — an API, an accessibility
+layer, ADB, VNC, RDP, a driver, an agent process running inside it. **Victrl takes the opposite
+route: a single hardware device that is independent of the system it controls**, working the way a
+person does — look at the screen, press the keys.
 
 ```
-Analyze screen → Operate keyboard/mouse → Observe results
+capture the display  →  press keyboard/mouse  →  observe the result
 ```
 
-The entire project is essentially exploring a new architecture: **Hardware AI Agent**.
+Nothing is installed on, injected into, or read out of the target. It attaches as an ordinary
+external display sink plus a standard USB keyboard and mouse, so it works on anything with a video
+output and a USB port: **Windows, Linux, macOS, Android, industrial PCs, embedded terminals — and
+old, closed or unfriendly machines that no software agent can reach.** That includes things no
+API-based agent can do at all, such as changing BIOS settings or performing an unattended OS
+install.
 
-Victrl makes it possible for AI Agents to perform special operations such as tweaking BIOS settings or fully automated OS installation.
+The whole project is an exploration of one architecture: the **Hardware AI Agent**.
 
-This repository is the **Victrl MVP** version, open-sourced under the **Apache 2.0** license. The full commercial version will be provided as closed source.
+> **This repository is the current implementation: the agent loop runs on the MCU.**
 
-------
+Earlier, the same loop was validated as a Python system on Linux, driving a capture card and a
+serial HID bridge. That prototype proved the concept and is documented in the wiki — it is **not**
+the code in this repository. What is here is the version where the entire agent harness was
+compressed onto a microcontroller with no operating system.
 
-## Value & Features:
+---
 
-- **Pure hardware implementation**: MVP uses Linux + capture card + HID emulation, completely independent of the target device
-- **Plug and play**: Captures screen, emulates keyboard/mouse — no software pre-installation required on any OS (Windows/Linux/macOS/Android)
-- **Cross-platform versatility**: Theoretically compatible with any device that has video output + HID input (PCs, phones, industrial PCs, embedded terminals, etc.)
-- **Universal target scenarios**: Covers personal productivity, enterprise legacy systems, automated testing, operations, and more
-- **Non-intrusive integration**: Nothing is installed on or modified in the target system, and no target-side agent, hook, or driver is required
-- **LLM-driven decisions**: Calls any multimodal large model (GPT, Claude, Gemini, Doubao-seed, etc.) to understand the screen and generate operation instructions
-- **Offline capable**: Currently relies on cloud models, but the architecture allows local small-model deployment for full localization
-- **Memory system**: L1, L2, L3 — allows the model to autonomously append experience
-- **Extensible architecture**: Reserved extension points such as a skill system, on-demand loading, and exploration mode
-- **Hardware miniaturization**: Can be built as a "USB-sized" portable device — plug and play for automation
+## What "the agent loop runs on the MCU" means, precisely
 
-Victrl uses a **single** hardware device — **pure hardware, pure peripheral** — completely independent of the target device's software ecosystem. This "human-like operation" approach:
+The LLM is a stateless function called over HTTPS. Everything that turns a stateless model into an
+agent lives **on the device**:
 
-> **Makes almost any device — no matter how old, closed, or unfriendly — automatable, provided you own it or have obtained prior authorization from its owner.**
+- the sense → think → act state machine
+- the trajectory (its memory), the plan, and the conversation-window store
+- the status line: cursor position, held buttons, lock-key state, whether the screen changed
+- verification and **failure classification**
+- the MJPEG decode, region-of-interest crop/scale, re-encode and upload pipeline
+- the HID synthesis, and the on-device WebUI
 
-Victrl grants no authorization by itself. Whether its use is lawful is determined entirely by the relationship between the operator and the target device — read the [Authorization & Compliance Notes](Docs/Compliance.md) before connecting anything.
+There is no Linux, no Python and no OS on the board — ESP-IDF 6.0.1 with FreeRTOS, 32 MB of PSRAM
+and a microSD card. A cloud agent framework keeps its memory on a server; **this keeps its memory on
+the device.**
 
-------
+## Value & characteristics
 
-## Overall Architecture:
+- **Pure hardware.** Independent of the target's software ecosystem. It has no idea what an API is.
+- **Plug and play.** Any device with a video output and a USB port — no pre-installation, no agent,
+  no hook, no driver, nothing to configure on the target.
+- **Non-intrusive by construction.** It cannot read the target's files, memory or disk. It sees only
+  what the display shows.
+- **Runs as the logged-in user.** The target's permission model, account privileges and login state
+  all still apply. Victrl cannot obtain any privilege the person at the keyboard does not already have.
+- **Self-contained.** One board, one capture card, one SD card. It is a peripheral you plug in.
+- **Measured, not claimed.** Every number below comes from a real run, and the failures are published
+  alongside the successes — see [The hard part](#the-hard-part).
+
+---
+
+## Architecture
 
 ```mermaid
-graph TD
-    subgraph "Target Device"
-        Screen[Screen Display]
-        HID_Target[Receive HID Input Bluetooth / USB HID]
+graph LR
+    subgraph Target["Target device — any OS"]
+        Screen[Display output]
+        HIDin[USB keyboard / mouse input]
     end
 
-    subgraph "Victrl Host"
-        subgraph "Image Input Layer"
-            UVC[UVC Capture Card /dev/video0]
-            Capture[UvcCapture OpenCV / V4L2 / ffmpeg]
-        end
-
-        subgraph "Agent Decision Layer"
-            Agent[Main Loop Controller agent.py]
-            CloudClient[Cloud Model Client Ark SDK]
-            Memory[Three-Layer Memory System L1 History / L2 Plan / L3 Profile]
-            HTTPServer[HTTP API Service Flask :8080]
-        end
-
-        subgraph "HID Output Layer"
-            SerialBridge[Serial HID Bridge serial_hid.py]
-            ESP32[ESP32 Firmware BLE HID Keyboard+Mouse]
-            Uinput[Linux uinput Virtual HID Fallback]
-        end
+    subgraph Victrl["Victrl — ESP32-P4, no OS"]
+        UVC["UVC capture card<br/>MJPEG 1920x1080"]
+        Prep["ROI crop + scale<br/>JPEG re-encode"]
+        Loop["Agent loop<br/>state machine · plan · trajectory<br/>status line · verification"]
+        HIDout["HID composite<br/>keyboard 6KRO + absolute mouse"]
+        SD[("microSD<br/>sessions · plans · logs")]
+        Web[["WebUI<br/>dashboard · sessions · preview"]]
     end
 
-    subgraph "Cloud Services"
-        VLM[Multimodal LLM Doubao / GPT / Claude]
-    end
+    Cloud["Multimodal LLM<br/>stateless, called per step"]
 
-    %% Main Data Flow
     Screen -->|HDMI| UVC
-    UVC -->|V4L2 Frames| Capture
-    Capture -->|PIL Image| Agent
-    Agent -->|Screenshot + Context| CloudClient
-    CloudClient -->|API Request| VLM
-    VLM -->|JSON Action| CloudClient
-    CloudClient -->|Parsed Action| Agent
-    Agent -->|Read/Write| Memory
-    Agent -->|Execute Action| SerialBridge
-    SerialBridge -->|UART 115200| ESP32
-    ESP32 -->|BLE HID| HID_Target
-    Agent -.->|Fallback Path| Uinput
-    Uinput -.->|USB OTG| HID_Target
-
-    %% Auxiliary Flow
-    HTTPServer -.->|Control/Query| Agent
+    UVC --> Prep
+    Prep --> Loop
+    Loop --> HIDout
+    HIDout -->|USB HID| HIDin
+    Loop <--> SD
+    Loop --> Web
+    Loop <-->|HTTPS: image + text state| Cloud
 ```
 
-Data flow summary:
+Each step: capture a frame, optionally crop/scale it to a region of interest, encode and upload it
+together with a text status line and the trajectory, receive JSON actions, execute them over HID,
+observe the result. The loop is stateless toward the API and stateful on the SD card.
 
-1. Capture the target device's HDMI output via a USB capture card
-2. Send the image (optional) along with the current task context to the multimodal model
-3. The model returns a JSON instruction
-4. The local HID executor simulates keyboard/mouse events
-5. Loop until the task is completed or manually stopped
+---
 
-> More: See the [Technical Document](Docs/Technical%20Document.md)
+## Measured
 
-------
+| | Measured on real hardware |
+|---|---|
+| Wall clock per step | **3.8 – 6.8 s** |
+| API share of that | **64 – 91 %** |
+| Throughput | ~116 output tokens/s ⇒ **a step's wall clock ≈ its output tokens ÷ 116** |
+| Request body, full frame | **406 KB** |
+| Request body, zoomed into a region | **87 – 89 KB** (4.7×) |
+| Full-resolution decode buffer | 6.2 MB, **cached across steps** |
+| Trajectory store | text only, zero historical screenshots |
 
-## Quick Start:
+Two conclusions fell out of the numbers that were not obvious:
 
-See [Main](Main/README.md).
+**Output tokens dominate latency, not capture or codecs.** Giving the model explicit per-field text
+budgets cut output by **43–58 %** and API time by **15–25 %**. No image-pipeline optimisation came
+close.
 
-------
+**Ambiguity is a latency bug.** An ambiguously worded multi-step instruction drove reasoning from
+~60 to **2326 tokens** and one step to **13.6 s**, which no effort setting contained. Writing the
+instruction clearly was worth more than any tuning.
 
-## Commercial Version:
+---
 
-The commercial version will comprehensively enhance **hardware form factor and intelligence capabilities** on top of the open-source MVP:
+## The hard part
 
-The hardware will be downsized to the size of a USB stick or TV dongle, integrating a small screen and buttons. An optional camera version (for devices without video output) will be available.
+Driving a GUI with a language model is not the interesting problem. The interesting problem is that
+the device's output channel is **character-level**, and the target is free to **reinterpret those
+characters**. Most of this project's engineering effort went there, and the results are the most
+transferable thing in it.
 
-Supports dual control via mobile App and WebUI, voice input, skill system, exploration mode, and multimodal memory. Supports multi-device profiles and screen resolution auto-adaptation.
+**A Chinese IME silently eats digits.** Typing `Vicrl-7391-A` into Notepad produced `Vicrl--A`: the
+device had queued `ALL 12/12` key events and the application's own status bar reported 8 characters.
+Letters, hyphens, spaces and punctuation all survive — **digits alone are consumed**, on the main
+number row *and* on the numeric keypad (measured with Num Lock confirmed on).
 
-Interaction-wise, it implements task decomposition and confirmation, proactive inquiry, and accessibility extensions.
+**A blind toggle is worse than no toggle.** `shift` and `ctrl+space` flip the *same* state. A model
+told to try one and then the other toggles twice and lands exactly where it started — which is how
+one dropped digit became an escalating recovery loop. The mode is a **parity the device cannot
+observe**.
 
-Efficiency aspects include context optimization and faster decision-making. Supports multi-Victrl device coordination for cross-device collaborative automation, etc.
+**The fix is a probe — and its timing matters as much as the probe.** Type the 2-character probe
+`a1` and read the application's own character count: `a1` means the mode is right, `a` alone means it
+is not. That converts an unobservable parity into a measurable state. But three toggles in a row,
+each probed in the *same* batch, all looked like failures — and the next multi-word type with no
+toggle at all came through intact. **The toggles had worked all along**; the probe was sent before
+the asynchronous mode switch landed. A false negative here is more expensive than no probe at all.
 
-------
+**Two identical symptoms, opposite fixes** — the classification the harness now does for itself, and
+the single most expensive mistake we made:
 
-## Caution:
+| Discriminator | Cause | Fix |
+|---|---|---|
+| `queued < len` | the device never sent it | transport / HID problem |
+| screen **unchanged** after the action | the keystrokes never reached the field — **focus** | click into the field, then retype |
+| screen **changed** but the text is wrong | the characters were **reinterpreted** on the target | change the input *channel*, not the retry count |
 
-Victrl turns "visual automation" from a software solution into a hardware peripheral. It attaches to the target device as an ordinary external display sink plus a standard Bluetooth/USB keyboard and mouse. It contains no exploit, no vulnerability, no credential or signature bypass, and no logic aimed at defeating security controls: it neither breaks into a system nor reads its stored data, and it sees the target only through its HDMI/display output.
+A full write-up, with the logs, is in the wiki.
 
-Because the target treats it as a normal keyboard and mouse, it can perform **any keyboard/mouse operation** the logged-in user could perform — including but not limited to **running commands, deleting files, modifying system settings, and downloading software**. The target's own permission model, account privileges, and login state still apply: Victrl operates *as* whoever is logged in, and never as a higher-privileged identity.
+---
+
+## Hardware
+
+| Part | Role |
+|---|---|
+| **ESP32-P4** — dual-core RISC-V, 32 MB PSRAM, 16 MB flash | the entire agent |
+| **ESP32-C6** over SDIO (ESP-Hosted) | WiFi |
+| **MS2109** USB capture card | MJPEG 1920×1080 — the agent's eyes |
+| **TinyUSB** composite HID | keyboard (6KRO, 1 ms interval) + absolute mouse (0…32767) |
+| **NV3007** 142×428 SPI LCD | on-device status |
+| microSD (FAT32) | sessions, plans, trajectories, task logs |
+
+---
+
+## Quick start
+
+```bash
+cp sdcard/config.example.json sdcard/config.json   # add your API key and WiFi credentials
+# copy sdcard/ to a FAT32 microSD card
+# build with ESP-IDF 6.0.1 and flash
+```
+
+`config.json` is git-ignored — it holds live credentials. The template is
+[`sdcard/config.example.json`](sdcard/config.example.json).
+
+The device brings up its own WebUI: dashboard, conversation windows, live screen preview, SD file
+browser, and a per-step latency breakdown
+(`total / capture / prep(setup,dec,rs,enc) / connect / http / parse / sdlog / exec / sleep`). That
+breakdown is the first thing to look at when a step is slow, and it is how every number in this
+README was measured.
+
+Full technical documentation: [`docs/技术文档.md`](docs/技术文档.md) (Chinese, and considerably more
+detailed than this page).
+
+---
+
+## What this does **not** do
+
+- **It is not a software agent.** It cannot run inside the target, read its files, or call its APIs.
+  If you can install software on the target, use a software tool — it will be faster and more capable.
+- **It needs a video output it can capture.** Machines with no display output, DRM-protected video,
+  or output that never reaches the capture card are out of reach.
+- **It needs the target to accept a USB keyboard.** Bluetooth HID is a natural extension; USB is what
+  is implemented today.
+- **It runs as the logged-in user, and nothing more.** An unattended machine sitting at a lock screen
+  is not something Victrl can get past — by design, it has no bypass capability.
+- **Chinese IMEs are a real limitation.** In Chinese mode, digits typed into GUI text fields are
+  consumed. There are workarounds; a task that genuinely requires typing digits into a text field on
+  such a machine is blocked.
+- **Latency is the model's**, and it needs network plus an API key.
+- No audio, no file transfer, no clipboard integration beyond keystrokes.
+
+---
+
+## Caution
+
+Victrl turns "visual automation" from a software approach into a hardware peripheral. It attaches to
+the target as an ordinary external display sink plus a standard USB keyboard and mouse. It contains
+no exploit, no vulnerability, no credential or signature bypass, and no logic aimed at defeating
+security controls: it neither breaks into a system nor reads its stored data, and it sees the target
+only through its display output.
+
+Because the target treats it as a normal keyboard and mouse, it can perform **any keyboard/mouse
+operation** the logged-in user could perform — including **running commands, deleting files,
+modifying system settings, and downloading software**. The target's own permission model and login
+state still apply: Victrl operates *as* whoever is logged in, and never as a higher-privileged
+identity.
 
 Two hard limits follow, and they are the user's responsibility, not the project's:
 
-- **Authorized targets only.** Connect Victrl only to devices you own or are expressly authorized in writing to operate. Connecting it to someone else's device without authorization — or continuing to control a device after authorization is withdrawn — may constitute illegal intrusion into, or illegal control of, a computer information system.
-- **Physically protect the device.** Anyone who can reach an already-paired Victrl can operate the target through it. Keep it under physical control, and load task configurations and skill packs only from trusted sources.
+- **Authorized targets only.** Connect Victrl only to devices you own or are expressly authorized in
+  writing to operate. Connecting it to someone else's device without authorization — or continuing to
+  control a device after authorization is withdrawn — may constitute illegal intrusion into, or
+  illegal control of, a computer information system.
+- **Physically protect the device.** Anyone who can reach an already-configured Victrl can operate the
+  target through it. Keep it under physical control, and load task configurations only from trusted
+  sources.
 
 ### Usage principles (binding)
 
-1. **Authorized use only.** Permitted: (a) devices you own or lawfully possess; (b) enterprise automation, testing, operations, accessibility, or legacy-system scenarios where the device's owner or administrator has given **prior, documented authorization**. Prohibited: any **unauthorized** access to or control of another person's computer information system, obtaining its data, or attaching the device to a third party's equipment without authorization.
-2. **No concealment.** Do not use Victrl to hide its presence or activity on a target, or to defeat the target's security controls.
-3. **No unlawful ends.** Do not use Victrl to obtain others' credentials, authentication codes, or personal information, to commit fraud, or to deploy malware.
-4. **You are the responsible party.** The operator is solely responsible for ensuring the use complies with applicable law (in mainland China, notably Articles 285 and 286 of the Criminal Law and Article 27 of the Cybersecurity Law) and with the target device's licence terms and internal policies.
+1. **Authorized use only.** Permitted: (a) devices you own or lawfully possess; (b) enterprise
+   automation, testing, operations, accessibility, or legacy-system scenarios where the device's owner
+   or administrator has given **prior, documented authorization**. Prohibited: any **unauthorized**
+   access to or control of another person's computer information system, obtaining its data, or
+   attaching the device to a third party's equipment without authorization.
+2. **No concealment.** Do not use Victrl to hide its presence or activity on a target, or to defeat
+   the target's security controls.
+3. **No unlawful ends.** Do not use Victrl to obtain others' credentials, authentication codes, or
+   personal information, to commit fraud, or to deploy malware.
+4. **You are the responsible party.** The operator is solely responsible for ensuring the use complies
+   with applicable law (in mainland China, notably Articles 285 and 286 of the Criminal Law and
+   Article 27 of the Cybersecurity Law) and with the target device's licence terms and internal
+   policies.
 
-The project itself contains no malicious logic and is published for research and lawful automation. The maintainers neither provide nor endorse any unauthorized-control use case.
+The project itself contains no malicious logic and is published for research and lawful automation.
+The maintainers neither provide nor endorse any unauthorized-control use case.
 
-## License & Disclaimer:
+**Read the [Authorization & Compliance Notes](docs/Compliance.md) before connecting anything.** It
+sets out the legal framework, the offence thresholds, a scenario-by-scenario risk matrix, and the
+engineering practices that keep a project like this on the right side of the line.
 
-Victrl MVP is open-sourced under the **Apache 2.0 License**. This project is intended for research, automation, and lawfully authorized operations only. Users must bear the risk that automated operations may violate the software licence agreements of target devices. It is prohibited to use Victrl for cracking, intrusion, unauthorized control of computer information systems, or any other illegal activity. The Apache 2.0 licence grants copyright permissions only — **it does not, and cannot, exempt anyone from criminal or administrative liability**.
+---
 
-Before deploying Victrl, read the [Authorization & Compliance Notes](Docs/Compliance.md). The author and contributors are not liable for any direct, indirect, incidental, special, or punitive damages, including but not limited to data loss, system damage, business interruption, or violation of third-party terms of service, arising from use of this software.
+## Documentation
+
+| | |
+|---|---|
+| [`docs/技术文档.md`](docs/技术文档.md) | Full technical documentation — architecture, every component, the complete decision record (Chinese) |
+| [`docs/Compliance.md`](docs/Compliance.md) · [`docs/合规与授权说明.md`](docs/合规与授权说明.md) | Authorization & compliance notes (English / 中文) |
+| wiki | The prototype → MCU story, and the engineering write-ups behind *The hard part* above |
+
+## License & disclaimer
+
+Victrl is open-sourced under the **Apache 2.0 License**. It is intended for research, automation and
+**lawfully authorized** operations only. Users must bear the risk that automated operations may
+violate the licence agreements of target devices. Using Victrl for cracking, intrusion, or
+unauthorized control of computer information systems is prohibited. The Apache 2.0 licence grants
+copyright permissions only — **it does not, and cannot, exempt anyone from criminal or
+administrative liability.**
+
+The author and contributors are not liable for any direct, indirect, incidental, special, or punitive
+damages, including but not limited to data loss, system damage, business interruption, or violation of
+third-party terms of service, arising from use of this software.
 
 ------
 

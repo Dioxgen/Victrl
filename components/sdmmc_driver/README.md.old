@@ -1,0 +1,228 @@
+# SDMMC Driver
+
+基于 ESP-IDF SDMMC 示例提取的 SD 卡驱动库，**专为 ESP32-P4-WIFI6-DEV-KIT 开发板设计**，通过 SDMMC 接口初始化、挂载 FAT 文件系统并进行文件读写。
+
+> ⚠️ 本库仅适配 ESP32-P4-WIFI6-DEV-KIT。LDO 供电逻辑是该开发板特有的，
+> 用于其他 ESP32-P4 板子时请将 `pwr_ctrl_ldo_enable` 设为 `false`。
+
+---
+
+## 功能
+
+| 功能 | 说明 |
+|---|---|
+| 专用适配 | ESP32-P4-WIFI6-DEV-KIT，4 线 40 MHz |
+| 高速模式 | 默认 SDMMC_FREQ_HIGHSPEED (40 MHz) |
+| LDO 供电 | 内部 LDO 供电（ESP32-P4-WIFI6-DEV-KIT 专用） |
+| 挂载失败自动格式化 | `format_if_mount_failed = true`（默认） |
+| 文件写入 (字符串) | `sdmmc_driver_write_file()` — 带硬件写入校验 |
+| 文件写入 (二进制) | `sdmmc_driver_write_binary_file()` — 任意二进制数据 |
+| 文件读取 | `sdmmc_driver_read_file()` — 按行读取 |
+| 连续读写测速 | `sdmmc_driver_speed_test()` — 大文件吞吐量测试 |
+
+---
+
+## 文件结构
+
+```
+components/
+  sdmmc_driver/
+    ├── CMakeLists.txt
+    ├── sdmmc_driver.c         ← 库实现
+    └── include/
+        └── sdmmc_driver.h     ← 公共 API
+```
+
+---
+
+## API 参考
+
+### 配置结构体
+
+```c
+typedef struct {
+    int clk_pin;                // CLK 引脚
+    int cmd_pin;                // CMD 引脚
+    int d0_pin;                 // D0 引脚
+    int d1_pin;                 // D1 引脚（-1 表示不用）
+    int d2_pin;                 // D2 引脚
+    int d3_pin;                 // D3 引脚
+    int bus_width;              // 总线宽度：1 或 4
+    bool format_if_mount_failed; // 挂载失败自动格式化
+    const char *mount_point;    // 挂载路径，默认 "/sdcard"
+    int max_files;              // 最大打开文件数，默认 5
+    int allocation_unit_size;   // FAT 分配单元，默认 16 KB
+    int max_freq_khz;           // 频率 (kHz)，默认 40000 (40 MHz)
+    bool pwr_ctrl_ldo_enable;   // 启用内部 LDO（ESP32-P4 自动开启）
+    int  pwr_ctrl_ldo_chan_id;  // LDO 通道，默认 4
+} sdmmc_driver_config_t;
+```
+
+### 函数
+
+```c
+// 按芯片型号填充默认配置
+void sdmmc_driver_get_default_config(sdmmc_driver_config_t *config);
+
+// 初始化 SDMMC → 挂载 FAT 文件系统
+esp_err_t sdmmc_driver_init(const sdmmc_driver_config_t *config,
+                            sdmmc_card_t **out_card);
+
+// 卸载文件系统，释放资源
+esp_err_t sdmmc_driver_deinit(const char *mount_point, sdmmc_card_t *card);
+
+// 写字符串到文件（含硬件写入校验）
+esp_err_t sdmmc_driver_write_file(const char *path, const char *data);
+
+// 写二进制数据到文件（如 JPEG 帧）
+esp_err_t sdmmc_driver_write_binary_file(const char *path, const uint8_t *data, size_t len);
+
+// 读文件第一行到缓冲区
+esp_err_t sdmmc_driver_read_file(const char *path, char *buffer, size_t buf_size);
+
+// 连续写入+读取大文件，输出吞吐量 (KB/s)
+esp_err_t sdmmc_driver_speed_test(const char *mount_point,
+                                  const char *file_path,
+                                  size_t file_size_kb,
+                                  size_t chunk_size);
+```
+
+---
+
+## 默认引脚（ESP32-P4-WIFI6-DEV-KIT）
+
+| CLK | CMD | D0 | D1 | D2 | D3 | 总线 | 频率 | LDO |
+|---|---|---|---|---|---|---|---|---|
+| 43 | 44 | 39 | 40 | 41 | 42 | 4 线 | 40 MHz | ✅ (DEV-KIT 专用) |
+
+---
+
+## 快速开始
+
+### 1. 引入库
+
+在你的项目 CMakeLists.txt 中依赖 `sdmmc_driver`：
+
+```cmake
+idf_component_register(SRCS "main.c"
+                       INCLUDE_DIRS "."
+                       REQUIRES sdmmc_driver)
+```
+
+### 2. 最小示例
+
+```c
+#include "sdmmc_driver.h"
+
+void app_main(void) {
+    sdmmc_driver_config_t cfg;
+    sdmmc_card_t *card;
+
+    // 自动获取当前芯片的默认引脚和配置
+    sdmmc_driver_get_default_config(&cfg);
+
+    // 初始化并挂载
+    esp_err_t ret = sdmmc_driver_init(&cfg, &card);
+    if (ret != ESP_OK) return;
+
+    // 写字符串文件
+    sdmmc_driver_write_file("/sdcard/test.txt", "Hello SD Card!\n");
+
+    // 写二进制文件 (JPEG 帧、传感器数据等)
+    uint8_t frame[] = {0xFF, 0xD8, /* ... */};
+    sdmmc_driver_write_binary_file("/sdcard/frame.jpg", frame, sizeof(frame));
+
+    // 读文件
+    char buf[128];
+    sdmmc_driver_read_file("/sdcard/test.txt", buf, sizeof(buf));
+
+    // 测速（1 MB，8 KB 块）
+    sdmmc_driver_speed_test(cfg.mount_point,
+                            "/sdcard/speed.bin", 1024, 8192);
+
+    // 卸载
+    sdmmc_driver_deinit(cfg.mount_point, card);
+}
+```
+
+### 3. 自定义配置
+
+```c
+sdmmc_driver_config_t cfg;
+sdmmc_driver_get_default_config(&cfg);
+
+// 按需修改
+cfg.max_freq_khz = 20000;              // 降为 20 MHz
+cfg.format_if_mount_failed = false;    // 不自动格式化
+cfg.bus_width = 1;                     // 单线模式
+cfg.mount_point = "/sd";               // 修改挂载路径
+
+// 如果用于其他 ESP32-P4 板子（非 DEV-KIT），关闭 LDO
+cfg.pwr_ctrl_ldo_enable = false;
+
+sdmmc_driver_init(&cfg, &card);
+```
+
+### 4. 混用 POSIX API
+
+库挂载的是标准 VFS (FatFS)，你可以直接用 C 标准库：
+
+```c
+FILE *f = fopen("/sdcard/data.bin", "wb");
+fwrite(buf, 1, size, f);
+fclose(f);
+
+// 目录遍历、stat、rename、unlink 等均可用
+```
+
+---
+
+## Kconfig 配置
+
+所有引脚和参数均可通过 `menuconfig` → **SDMMC Driver** 配置，无需修改代码：
+
+| 符号 | 默认值 | 说明 |
+|---|---|---|
+| `CONFIG_SDMMC_DRV_CLK_PIN` | 43 | CLK 引脚 |
+| `CONFIG_SDMMC_DRV_CMD_PIN` | 44 | CMD 引脚 |
+| `CONFIG_SDMMC_DRV_D0_PIN` | 39 | D0 引脚 |
+| `CONFIG_SDMMC_DRV_D1_PIN` | 40 | D1 引脚 |
+| `CONFIG_SDMMC_DRV_D2_PIN` | 41 | D2 引脚 |
+| `CONFIG_SDMMC_DRV_D3_PIN` | 42 | D3 引脚 |
+| `CONFIG_SDMMC_DRV_BUS_WIDTH` | 4 | 总线宽度 (1 或 4) |
+| `CONFIG_SDMMC_DRV_MAX_FREQ_KHZ` | 40000 | 最高频率 (kHz) |
+| `CONFIG_SDMMC_DRV_MOUNT_POINT` | "/sdcard" | 挂载路径 |
+| `CONFIG_SDMMC_DRV_MAX_FILES` | 5 | 最大打开文件数 |
+| `CONFIG_SDMMC_DRV_FORMAT_IF_MOUNT_FAILED` | y | 挂载失败自动格式化 |
+| `CONFIG_SDMMC_DRV_ALLOC_UNIT_SIZE` | 16384 | FAT 分配单元 |
+| `CONFIG_SDMMC_DRV_LDO_ENABLE` | y | 启用在片 LDO |
+| `CONFIG_SDMMC_DRV_LDO_CHAN_ID` | 4 | LDO 通道 |
+
+`sdmmc_driver_get_default_config()` 会读取这些 Kconfig 符号作为运行时默认值。
+
+---
+
+## 硬件要求（ESP32-P4-WIFI6-DEV-KIT）
+
+| 项目 | 要求 |
+|---|---|
+| 上拉电阻 | CMD、D0～D3 各接 **10 kΩ** 到 3.3V |
+| D3 上拉 | 必须接，否则卡可能进入 SPI 模式 |
+| 供电 | 卡槽 VDD 接 3.3V |
+| 内部 LDO | DEV-KIT 已板载，库自动启用；其他 P4 板子需关闭 |
+
+---
+
+## 故障排查
+
+| 错误码 | 含义 | 排查方向 |
+|---|---|---|
+| `0x107` (TIMEOUT) | 卡无应答 | 供电、LDO、上拉电阻、卡是否插紧 |
+| `0x109` (CRC) | 数据校验失败 | 信号质量，降低频率到 20 MHz 试试 |
+| `0xffffffff` (FAIL) | 通信异常 | 断电重启开发板，重新拔插 SD 卡 |
+
+---
+
+## 许可
+
+与 ESP-IDF 示例同源，采用 Unlicense / CC0-1.0 许可。

@@ -1,0 +1,5 @@
+dependencies:
+  usb:
+    public: true
+    version: ^1.0.0
+description: UVC Capture Card Driver (USB UVC host + frame capture + SD save)
