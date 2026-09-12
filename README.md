@@ -46,6 +46,22 @@ There is no Linux, no Python and no OS on the board — ESP-IDF 6.0.1 with FreeR
 
 ---
 
+## Where a software agent cannot go
+
+Software computer use has two preconditions: a running OS on the target, and a way in — a network path, an agent process, an API, an accessibility layer. Victrl needs neither, and that is not a difference of degree: there are tasks where a software agent cannot compete at all, however capable the model behind it becomes.
+
+**Before the target has a usable OS.** BIOS/UEFI setup, the boot menu, a disk-encryption prompt, an OS installer, a recovery console — in those phases there is no runtime for software to live in. Changing Secure Boot or the boot order, configuring RAID, flashing firmware, installing an OS on a machine that cannot network-boot, recovering a machine whose boot configuration is broken: the alternatives are network boot with prepared images, a BMC, or a person sitting in front of it. Victrl needs a video output and a USB port, and it *watches* what it did — whether a menu was driven correctly is confirmed on the screen, not inferred from an exit code.
+
+**Targets that cannot take software.** Legacy SCADA HMIs, industrial and laboratory instruments, CNC machines, POS terminals, vendor-locked appliances: no API, nothing that can host an agent, and often no vendor support left. The same holds wherever installing anything is forbidden — regulated environments, third-party sites, machines you may plug into but not modify. One device covers a room of heterogeneous machines that would otherwise each need their own software integration.
+
+**When the target's own network is the fault.** A software agent runs *on* the target, so it reaches the model through the target's network — and when the fault *is* that network, the agent goes offline at exactly the moment it is needed. That deadlock cannot happen here: the model connection lives on the device, so it can repair the target's network from outside while the target has none at all. For an individual this is where the project earns its place, because the enterprise answers to "the machine will not boot" are a BMC on server-class hardware or a paid remote-hands service, while this is one board that works on a laptop too.
+
+That decoupling is not a licence to automate everything that happens to be offline. An isolated or encrypted environment is usually isolated on purpose, and pointing this device at one is hasty — it deserves more caution than an ordinary target, not less.
+
+The other side is set out in full under [What this does **not** do](#what-this-does-not-do): wherever the target can run software, or the work lives in the cloud, a software agent is faster, cheaper and more capable, and this device is the wrong tool.
+
+---
+
 ## Architecture
 
 ```mermaid
