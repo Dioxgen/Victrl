@@ -50,7 +50,7 @@ type "a1" with clear_first  →  read the application's own character count
 
 Two failed probes with the probe as its own step means the machine needs a different channel — stop toggling. The status line also reports `IME toggles sent: N`, so "you have already tried this twice" is a fact rather than a memory.
 
-**2. Separate the probe from the toggle in time.** This is the trap described in [Failure Taxonomy](Failure-Taxonomy): three same-batch probes reported a working toggle as broken. The probe must be its own step.
+**2. Separate the probe from the toggle in time.** This is the trap described in [Failure Taxonomy](Failure-Taxonomy.md): three same-batch probes reported a working toggle as broken. The probe must be its own step.
 
 **3. Provide channels that are not character-level.** When the task does not require typing into a GUI at all, do not:
 

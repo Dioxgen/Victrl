@@ -4,6 +4,22 @@
 
 Before any of this ran on a microcontroller, the same idea ran on a PC. The prototype was the cheapest way to answer one question: **can a model looking at a video capture of a screen, driving it through an emulated keyboard and mouse, actually complete tasks?** If the answer had been no, there would have been no point building hardware for it.
 
+## The two implementations, side by side
+
+They are **not one codebase**. The second is a re-implementation, not a port of shared code. The repository contains only the second one.
+
+| | **Prototype** | **Current** |
+|---|---|---|
+| Where | Linux PC (Ubuntu) | **ESP32-P4, no operating system** |
+| Language | Python | C (ESP-IDF 6.0.1 + FreeRTOS) |
+| Screen capture | V4L2 / OpenCV / ffmpeg on `/dev/video0` | UVC host driver, MJPEG 1920×1080 |
+| HID output | serial bridge → ESP32 BLE HID, or Linux `uinput` | **native TinyUSB composite** (keyboard + absolute mouse) |
+| Cloud calls | Ark SDK (Doubao-seed) | stateless HTTPS, Responses-style API |
+| Memory | three layers (L1 history / L2 plan / L3 profile) on disk | SD-card sessions: trajectory + plan + profile |
+| Control surface | Flask HTTP API on `:8080` | **on-device WebUI** (dashboard, sessions, preview, file browser) |
+| Size / power | a PC | one board, one capture card, one SD card |
+| Status | **frozen, historical** | actively developed |
+
 ## Shape
 
 ```
@@ -60,4 +76,4 @@ The prototype is therefore frozen at its last version and kept for reference onl
 | Text status line as ground truth | carried over and greatly expanded — it now reports cursor position, lock keys, screen-change, and input-method toggle count |
 | Serial HID bridge to an ESP32 | **dropped** — the MCU does HID natively now |
 | Flask control API | **replaced** by an on-device WebUI |
-| Python's tolerance for sloppy resource handling | **dropped, painfully** — see [MCU Port](MCU-Port) |
+| Python's tolerance for sloppy resource handling | **dropped, painfully** — see [MCU Port](MCU-Port.md) |

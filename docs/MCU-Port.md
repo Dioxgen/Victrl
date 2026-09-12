@@ -71,7 +71,7 @@ Three capabilities have no equivalent in the prototype, and they are the reason 
 
 - **Region-of-interest zoom.** The model can ask to be shown a sub-region, and the harness inverts the mapping exactly. Small targets become legible; upload drops 4.7×.
 - **A status line the device asserts.** The board is the only party that knows where the pointer is, whether the screen changed, and what lock keys are set. It says so every step instead of asking the model to infer it.
-- **Failure classification.** Distinguishing "never arrived" from "was reinterpreted" — see [Failure Taxonomy](Failure-Taxonomy).
+- **Failure classification.** Distinguishing "never arrived" from "was reinterpreted" — see [Failure Taxonomy](Failure-Taxonomy.md).
 
 ### Numbers
 
@@ -83,4 +83,4 @@ Three capabilities have no equivalent in the prototype, and they are the reason 
 | Decode buffer | 6.2 MB, cached across steps |
 | Output throughput | ~116 tokens/s |
 
-Full detail and the complete decision record: [`docs/技术文档.md`](../blob/main/docs/技术文档.md).
+Full detail and the complete decision record: [`docs/技术文档.md`](技术文档.md).

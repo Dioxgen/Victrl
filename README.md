@@ -18,7 +18,7 @@ The whole project is an exploration of one architecture: the **Hardware AI Agent
 
 > **This repository is the current implementation: the agent loop runs on the MCU.**
 
-Earlier, the same loop was validated as a Python system on Linux, driving a capture card and a serial HID bridge. That prototype proved the concept and is documented in the wiki — it is **not** the code in this repository. What is here is the version where the entire agent harness was compressed onto a microcontroller with no operating system.
+Earlier, the same loop was validated as a Python system on Linux, driving a capture card and a serial HID bridge. That prototype proved the concept and is documented in [`docs/Prototype.md`](docs/Prototype.md) — it is **not** the code in this repository. What is here is the version where the entire agent harness was compressed onto a microcontroller with no operating system.
 
 ---
 
@@ -50,18 +50,18 @@ There is no Linux, no Python and no OS on the board — ESP-IDF 6.0.1 with FreeR
 
 ```mermaid
 graph LR
-    subgraph Target["Target device — any OS"]
+    subgraph Target["Target device - any OS"]
         Screen[Display output]
         HIDin[USB keyboard / mouse input]
     end
 
-    subgraph Victrl["Victrl — ESP32-P4, no OS"]
+    subgraph Victrl["Victrl - ESP32-P4, no OS"]
         UVC["UVC capture card<br/>MJPEG 1920x1080"]
         Prep["ROI crop + scale<br/>JPEG re-encode"]
-        Loop["Agent loop<br/>state machine · plan · trajectory<br/>status line · verification"]
+        Loop["Agent loop<br/>state machine - plan - trajectory<br/>status line - verification"]
         HIDout["HID composite<br/>keyboard 6KRO + absolute mouse"]
-        SD[("microSD<br/>sessions · plans · logs")]
-        Web[["WebUI<br/>dashboard · sessions · preview"]]
+        SD[("microSD<br/>sessions - plans - logs")]
+        Web["WebUI<br/>dashboard - sessions - preview"]
     end
 
     Cloud["Multimodal LLM<br/>stateless, called per step"]
@@ -71,10 +71,15 @@ graph LR
     Prep --> Loop
     Loop --> HIDout
     HIDout -->|USB HID| HIDin
-    Loop <--> SD
+    Loop --- SD
     Loop --> Web
-    Loop <-->|HTTPS: image + text state| Cloud
+    Loop -->|HTTPS| Cloud
+    Cloud -->|JSON actions| Loop
 ```
+
+> Only syntax that has been valid since Mermaid 8 is used here: `-->`, `---`,
+> plain edge labels, quoted node text. Bidirectional arrows (`<-->`) were added
+> in Mermaid 9.4 and break the older renderer still used by some editors.
 
 Each step: capture a frame, optionally crop/scale it to a region of interest, encode and upload it together with a text status line and the trajectory, receive JSON actions, execute them over HID, observe the result. The loop is stateless toward the API and stateful on the SD card.
 
@@ -118,11 +123,19 @@ Driving a GUI with a language model is not the interesting problem. The interest
 | screen **unchanged** after the action | the keystrokes never reached the field — **focus** | click into the field, then retype |
 | screen **changed** but the text is wrong | the characters were **reinterpreted** on the target | change the input *channel*, not the retry count |
 
-A full write-up, with the logs, is in the wiki.
+Full write-ups, with the logs, are in [`docs/Failure-Taxonomy.md`](docs/Failure-Taxonomy.md) and [`docs/Input-Method-Troubles.md`](docs/Input-Method-Troubles.md).
 
 ---
 
 ## Hardware
+
+![The three parts laid out on a desk: the NV3007 142x428 SPI display, the button board, and the Waveshare ESP32-P4-WIFI6-DEV-KIT](Images/hardware-parts.jpg)
+
+*Three parts. Top left: the NV3007 142×428 SPI display. Top right: the button board — start, pause and abort without touching a browser. Bottom: the Waveshare ESP32-P4-WIFI6-DEV-KIT.*
+
+![The assembled device: the capture card on the USB host port, the display and buttons wired up](Images/hardware-rig.jpg)
+
+*Assembled. The capture card sits on the P4's USB host port and sees the target's HDMI output; the P4 presents itself as an ordinary keyboard and mouse on the other side.*
 
 | Part | Role |
 |---|---|
@@ -131,6 +144,7 @@ A full write-up, with the logs, is in the wiki.
 | **MS2109** USB capture card | MJPEG 1920×1080 — the agent's eyes |
 | **TinyUSB** composite HID | keyboard (6KRO, 1 ms interval) + absolute mouse (0…32767) |
 | **NV3007** 142×428 SPI LCD | on-device status |
+| Button board (GPIO0 / GPIO1) | start · pause · abort, without a browser |
 | microSD (FAT32) | sessions, plans, trajectories, task logs |
 
 ---
@@ -192,8 +206,10 @@ The project itself contains no malicious logic and is published for research and
 | | |
 |---|---|
 | [`docs/技术文档.md`](docs/技术文档.md) | Full technical documentation — architecture, every component, the complete decision record (Chinese) |
+| [`docs/Failure-Taxonomy.md`](docs/Failure-Taxonomy.md) | How the harness tells "never arrived" from "was reinterpreted" — *the hard part*, in full |
+| [`docs/Input-Method-Troubles.md`](docs/Input-Method-Troubles.md) | The input-method bug, start to finish, including what is still unsolved |
+| [`docs/Prototype.md`](docs/Prototype.md) · [`docs/MCU-Port.md`](docs/MCU-Port.md) | The Linux/Python prototype, and what moving the harness onto the chip actually cost |
 | [`docs/Compliance.md`](docs/Compliance.md) · [`docs/合规与授权说明.md`](docs/合规与授权说明.md) | Authorization & compliance notes (English / 中文) |
-| wiki | The prototype → MCU story, and the engineering write-ups behind *The hard part* above |
 
 ## License & disclaimer
 

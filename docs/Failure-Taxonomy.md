@@ -63,4 +63,4 @@ A false negative is worse than no measurement: it sends you to a different chann
 
 **Know what each cleanup key destroys.** While a candidate window is open, the composition has not entered the document yet — so `escape` discards it while touching nothing. `enter` commits it, which means it must then be undone. And `clear_first` is `ctrl+a`: the **entire field**, which on a document that already contains earlier work is destructive. The harness therefore also offers `replace_chars: N` — `shift+left` × N, an exact and local replacement, where N is readable from the application's own character count.
 
-See also: [Input Method Troubles](Input-Method-Troubles).
+See also: [Input Method Troubles](Input-Method-Troubles.md).

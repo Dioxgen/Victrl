@@ -18,7 +18,7 @@
 
 > **本仓库是当前实现：agent 回路跑在 MCU 上。**
 
-更早以前，同一套回路先在 Linux 上用 Python 验证过（采集卡 + 串口 HID 桥接）。那个原型证明了概念可行，已记录在 wiki 中——**它不是本仓库的代码**。这里放的是把整个 agent harness 压缩进一颗没有操作系统的单片机之后的版本。
+更早以前，同一套回路先在 Linux 上用 Python 验证过（采集卡 + 串口 HID 桥接）。那个原型证明了概念可行，已记录在 [`docs/Prototype.md`](docs/Prototype.md) 中——**它不是本仓库的代码**。这里放的是把整个 agent harness 压缩进一颗没有操作系统的单片机之后的版本。
 
 ---
 
@@ -50,18 +50,18 @@ LLM 是一个通过 HTTPS 调用的**无状态函数**。把无状态模型变�
 
 ```mermaid
 graph LR
-    subgraph Target["被控设备 — 任意 OS"]
+    subgraph Target["被控设备 - 任意 OS"]
         Screen[显示输出]
         HIDin[USB 键鼠输入]
     end
 
-    subgraph Victrl["Victrl — ESP32-P4，无操作系统"]
+    subgraph Victrl["Victrl - ESP32-P4，无操作系统"]
         UVC["UVC 采集卡<br/>MJPEG 1920x1080"]
         Prep["ROI 裁切 + 缩放<br/>JPEG 重编码"]
-        Loop["Agent 回路<br/>状态机 · 计划 · 轨迹<br/>状态栏 · 验证"]
+        Loop["Agent 回路<br/>状态机 - 计划 - 轨迹<br/>状态栏 - 验证"]
         HIDout["HID 复合设备<br/>键盘 6KRO + 绝对坐标鼠标"]
-        SD[("microSD<br/>会话 · 计划 · 日志")]
-        Web[["WebUI<br/>仪表板 · 会话 · 画面预览"]]
+        SD[("microSD<br/>会话 - 计划 - 日志")]
+        Web["WebUI<br/>仪表板 - 会话 - 画面预览"]
     end
 
     Cloud["多模态大模型<br/>无状态，逐步调用"]
@@ -71,10 +71,15 @@ graph LR
     Prep --> Loop
     Loop --> HIDout
     HIDout -->|USB HID| HIDin
-    Loop <--> SD
+    Loop --- SD
     Loop --> Web
-    Loop <-->|HTTPS：图像 + 文本状态| Cloud
+    Loop -->|HTTPS| Cloud
+    Cloud -->|JSON 动作| Loop
 ```
+
+> 这里只用了 **Mermaid 8 时代就存在的语法**：`-->`、`---`、纯文本边标签、带引号的节点文本。
+> 双向箭头 `<-->` 是 Mermaid 9.4 才加入的，在部分编辑器内置的旧版渲染器里会报
+> `Lexical error ... Unrecognized text`。
 
 每一步：抓帧 → 按需裁切缩放到感兴趣区域 → 编码上传，连同文本状态栏与轨迹 → 收到 JSON 动作 → 经 HID 执行 → 观察结果。回路对 API 是无状态的，状态全部落在 SD 卡上。
 
@@ -118,11 +123,19 @@ graph LR
 | 动作后**屏幕完全没变** | 按键没到达目标控件——**焦点问题** | 点进控件，然后重打 |
 | 屏幕**变了**但文字不对 | 字符在目标机被**重新解释** | 换输入**通道**，而不是加大重试次数 |
 
-完整复盘（含日志）在 wiki 中。
+完整复盘（含日志）见[失败分类学](docs/Failure-Taxonomy.md)与[输入法问题记录](docs/Input-Method-Troubles.md)。
 
 ---
 
 ## 硬件
+
+![三件平铺：NV3007 142x428 SPI 屏、按键板、Waveshare ESP32-P4-WIFI6-DEV-KIT](Images/hardware-parts.jpg)
+
+*三件套。左上：NV3007 142×428 SPI 屏。右上：按键板——不开浏览器就能开始、暂停、中止。下方：Waveshare ESP32-P4-WIFI6-DEV-KIT。*
+
+![整机接线状态：采集卡在 USB Host 口，屏幕与按键已接好](Images/hardware-rig.jpg)
+
+*接好的样子。采集卡插在 P4 的 USB Host 口，读目标机的 HDMI 输出；P4 在另一侧以一个普通键鼠的身份出现。*
 
 | 部件 | 作用 |
 |---|---|
@@ -131,6 +144,7 @@ graph LR
 | **MS2109** USB 采集卡 | MJPEG 1920×1080 —— agent 的眼睛 |
 | **TinyUSB** 复合 HID | 键盘（6KRO，1ms 间隔）+ 绝对坐标鼠标（0…32767） |
 | **NV3007** 142×428 SPI LCD | 设备侧状态显示 |
+| 按键板（GPIO0 / GPIO1） | 开始 · 暂停 · 中止，不开浏览器 |
 | microSD（FAT32） | 会话、计划、轨迹、任务日志 |
 
 ---
@@ -192,8 +206,10 @@ Victrl 将「视觉自动化」从软件方案变成了硬件外设：它以普�
 | | |
 |---|---|
 | [`docs/技术文档.md`](docs/技术文档.md) | 完整技术文档——架构、各组件、完整决策记录 |
+| [`docs/Failure-Taxonomy.md`](docs/Failure-Taxonomy.md) | 失败分类学：如何区分「没到达」和「被重新解释」 |
+| [`docs/Input-Method-Troubles.md`](docs/Input-Method-Troubles.md) | 输入法问题始末，包括仍未解决的部分 |
+| [`docs/Prototype.md`](docs/Prototype.md) · [`docs/MCU-Port.md`](docs/MCU-Port.md) | Linux/Python 原型，以及把回路搬进芯片真正花掉的代价 |
 | [`docs/合规与授权说明.md`](docs/合规与授权说明.md) · [`docs/Compliance.md`](docs/Compliance.md) | 合规与授权说明（中文 / English） |
-| wiki | 原型 → MCU 的演进过程，以及上文「最难的那部分」背后的工程复盘 |
 
 ## 许可证与免责声明
 
