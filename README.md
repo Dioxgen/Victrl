@@ -209,6 +209,8 @@ The project itself contains no malicious logic and is published for research and
 
 Every document is available in Chinese as well: [`技术文档`](docs/技术文档.md) · [`失败分类学`](docs/失败分类学.md) · [`输入法问题`](docs/输入法问题.md) · [`原型`](docs/原型.md) · [`MCU移植`](docs/MCU移植.md) · [`合规与授权说明`](docs/合规与授权说明.md)
 
+Every component under [`components/`](components/) also carries its own README — `components/<name>/README.md` and `README_CN.md` — documenting its public API, its Kconfig options and the parts of its source that are easiest to misread.
+
 ## License & disclaimer
 
 Victrl is open-sourced under the **Apache 2.0 License**. It is intended for research, automation and **lawfully authorized** operations only. Users must bear the risk that automated operations may violate the licence agreements of target devices. Using Victrl for cracking, intrusion, or unauthorized control of computer information systems is prohibited. The Apache 2.0 licence grants copyright permissions only — **it does not, and cannot, exempt anyone from criminal or administrative liability.**

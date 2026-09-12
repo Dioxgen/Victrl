@@ -209,6 +209,8 @@ Victrl 将“视觉自动化”从软件方案变成了硬件外设：它以普�
 
 每份文档都有英文版：[`Technical-Document`](docs/Technical-Document.md) · [`Failure-Taxonomy`](docs/Failure-Taxonomy.md) · [`Input-Method-Troubles`](docs/Input-Method-Troubles.md) · [`Prototype`](docs/Prototype.md) · [`MCU-Port`](docs/MCU-Port.md) · [`Compliance`](docs/Compliance.md)
 
+[`components/`](components/) 下每个组件也自带 README——`components/<名称>/README.md` 与 `README_CN.md`，记录该组件的公开 API、Kconfig 选项，以及源码中最容易被误读的部分。
+
 ## 许可证与免责声明
 
 Victrl 使用 **Apache 2.0 License** 开源。本项目仅供研究、自动化以及**已获合法授权**的操作使用。使用者须自行承担因自动化操作可能违反目标设备软件许可协议的风险。禁止将 Victrl 用于破解、侵入、未经授权控制计算机信息系统等任何非法活动。Apache 2.0 仅授予著作权层面的许可，**不能、也不可能免除任何人的刑事或行政责任**。
