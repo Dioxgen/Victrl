@@ -2,6 +2,12 @@
 
 > [[中文](README_CN.md)|English]
 
+> **Authorized use only.** Victrl reads the target's screen through an external capture card and
+> drives it as a standard Bluetooth/USB keyboard and mouse. Use it only on devices you own or are
+> expressly authorized in writing to operate. Unauthorized use to access or control another
+> person's computer information system may be a criminal offence. Read
+> [Authorization & Compliance Notes](../Docs/Compliance.md) first.
+
 ## Project Structure
 
 ```
@@ -248,4 +254,5 @@ A: Delete `profiles/device_profile.md` and remove old plan files from `plans/`. 
 
 ## License
 
-Apache 2.0
+Apache 2.0 — see [Authorization & Compliance Notes](../Docs/Compliance.md). Lawful, authorized
+use only.

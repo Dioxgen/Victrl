@@ -28,7 +28,7 @@ This repository is the **Victrl MVP** version, open-sourced under the **Apache 2
 - **Plug and play**: Captures screen, emulates keyboard/mouse — no software pre-installation required on any OS (Windows/Linux/macOS/Android)
 - **Cross-platform versatility**: Theoretically compatible with any device that has video output + HID input (PCs, phones, industrial PCs, embedded terminals, etc.)
 - **Universal target scenarios**: Covers personal productivity, enterprise legacy systems, automated testing, operations, and more
-- **Zero intrusion**: No modifications to the target system, no software installed, no log traces left behind
+- **Non-intrusive integration**: Nothing is installed on or modified in the target system, and no target-side agent, hook, or driver is required
 - **LLM-driven decisions**: Calls any multimodal large model (GPT, Claude, Gemini, Doubao-seed, etc.) to understand the screen and generate operation instructions
 - **Offline capable**: Currently relies on cloud models, but the architecture allows local small-model deployment for full localization
 - **Memory system**: L1, L2, L3 — allows the model to autonomously append experience
@@ -37,7 +37,9 @@ This repository is the **Victrl MVP** version, open-sourced under the **Apache 2
 
 Victrl uses a **single** hardware device — **pure hardware, pure peripheral** — completely independent of the target device's software ecosystem. This "human-like operation" approach:
 
-> **Makes almost any device — no matter how old, closed, or unfriendly — a target for automated control.**
+> **Makes almost any device — no matter how old, closed, or unfriendly — automatable, provided you own it or have obtained prior authorization from its owner.**
+
+Victrl grants no authorization by itself. Whether its use is lawful is determined entirely by the relationship between the operator and the target device — read the [Authorization & Compliance Notes](Docs/Compliance.md) before connecting anything.
 
 ------
 
@@ -127,18 +129,29 @@ Efficiency aspects include context optimization and faster decision-making. Supp
 
 ## Caution:
 
-Victrl transforms "visual automation" from a software solution into a hardware peripheral, thereby bypassing any software restrictions on the target device (such as firewalls, permission policies, system integrity protection). It is recognized by the target device as a standard keyboard/mouse. This means it can perform **any keyboard/mouse operation**, including but not limited to: **launching commands, deleting files, modifying system settings, downloading malware**.
+Victrl turns "visual automation" from a software solution into a hardware peripheral. It attaches to the target device as an ordinary external display sink plus a standard Bluetooth/USB keyboard and mouse. It contains no exploit, no vulnerability, no credential or signature bypass, and no logic aimed at defeating security controls: it neither breaks into a system nor reads its stored data, and it sees the target only through its HDMI/display output.
 
-This type of hardware-level add-on challenges the security of virtually all potential target devices today. <u>Victrl itself contains no malicious logic and does not attempt to bypass any security mechanisms</u>. However, once connected to an untrusted host controller or if the configuration file is maliciously tampered with, serious consequences may result. Users must:
+Because the target treats it as a normal keyboard and mouse, it can perform **any keyboard/mouse operation** the logged-in user could perform — including but not limited to **running commands, deleting files, modifying system settings, and downloading software**. The target's own permission model, account privileges, and login state still apply: Victrl operates *as* whoever is logged in, and never as a higher-privileged identity.
 
-- Thoroughly test
-- Physically protect the Victrl device from unauthorized access
-- Only obtain task configurations and skill pack updates from trusted sources
-- Assess whether the task could cause data loss or system damage before running Victrl on the target device
+Two hard limits follow, and they are the user's responsibility, not the project's:
+
+- **Authorized targets only.** Connect Victrl only to devices you own or are expressly authorized in writing to operate. Connecting it to someone else's device without authorization — or continuing to control a device after authorization is withdrawn — may constitute illegal intrusion into, or illegal control of, a computer information system.
+- **Physically protect the device.** Anyone who can reach an already-paired Victrl can operate the target through it. Keep it under physical control, and load task configurations and skill packs only from trusted sources.
+
+### Usage principles (binding)
+
+1. **Authorized use only.** Permitted: (a) devices you own or lawfully possess; (b) enterprise automation, testing, operations, accessibility, or legacy-system scenarios where the device's owner or administrator has given **prior, documented authorization**. Prohibited: any **unauthorized** access to or control of another person's computer information system, obtaining its data, or attaching the device to a third party's equipment without authorization.
+2. **No concealment.** Do not use Victrl to hide its presence or activity on a target, or to defeat the target's security controls.
+3. **No unlawful ends.** Do not use Victrl to obtain others' credentials, authentication codes, or personal information, to commit fraud, or to deploy malware.
+4. **You are the responsible party.** The operator is solely responsible for ensuring the use complies with applicable law (in mainland China, notably Articles 285 and 286 of the Criminal Law and Article 27 of the Cybersecurity Law) and with the target device's licence terms and internal policies.
+
+The project itself contains no malicious logic and is published for research and lawful automation. The maintainers neither provide nor endorse any unauthorized-control use case.
 
 ## License & Disclaimer:
 
-Victrl MVP is open-sourced under the **Apache 2.0 License**. This project is intended for research and automation learning purposes only. Users must bear the risk that automated operations may violate the software license agreements of target devices, and it is prohibited to use it for cracking, intrusion, or other illegal operations. The author and contributors are not liable for any direct, indirect, incidental, special, or punitive damages, including but not limited to data loss, system damage, business interruption, or violation of third-party terms of service.
+Victrl MVP is open-sourced under the **Apache 2.0 License**. This project is intended for research, automation, and lawfully authorized operations only. Users must bear the risk that automated operations may violate the software licence agreements of target devices. It is prohibited to use Victrl for cracking, intrusion, unauthorized control of computer information systems, or any other illegal activity. The Apache 2.0 licence grants copyright permissions only — **it does not, and cannot, exempt anyone from criminal or administrative liability**.
+
+Before deploying Victrl, read the [Authorization & Compliance Notes](Docs/Compliance.md). The author and contributors are not liable for any direct, indirect, incidental, special, or punitive damages, including but not limited to data loss, system damage, business interruption, or violation of third-party terms of service, arising from use of this software.
 
 ------
 
