@@ -1,5 +1,7 @@
 # The MCU Port — Victrl on an ESP32-P4
 
+> **English** | [中文](MCU移植.md)
+
 This is the implementation in the repository. The prototype ran on a PC; this runs on a microcontroller with **no operating system**, and the whole harness came with it.
 
 ## What is on the chip

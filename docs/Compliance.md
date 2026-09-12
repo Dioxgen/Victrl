@@ -1,6 +1,6 @@
-﻿# Victrl — Authorization & Compliance Notes
+# Victrl — Authorization & Compliance Notes
 
-> [中文](合规与授权说明.md) | English
+> **English** | [中文](合规与授权说明.md)
 
 ## 1. Purpose of this document
 

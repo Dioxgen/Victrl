@@ -2,7 +2,7 @@
 
 ## Bringing automation back to the most primitive way: **see, click, see**
 
-> [English|[中文](README_CN.md)]
+> **English** | [中文](README_CN.md)
 
 ![license](https://img.shields.io/badge/license-Apache%202.0-blue) ![language](https://img.shields.io/badge/language-C%20(ESP--IDF)-brightgreen) ![platform](https://img.shields.io/badge/platform-ESP32--P4-red) ![agent](https://img.shields.io/badge/agent%20loop-on--device-orange)
 
@@ -201,11 +201,13 @@ The project itself contains no malicious logic and is published for research and
 
 | | |
 |---|---|
-| [`docs/技术文档.md`](docs/技术文档.md) | Full technical documentation — architecture, every component, the complete decision record (Chinese) |
+| [`docs/Technical-Document.md`](docs/Technical-Document.md) | Full technical documentation — architecture, every component, the complete decision record |
 | [`docs/Failure-Taxonomy.md`](docs/Failure-Taxonomy.md) | How the harness tells "never arrived" from "was reinterpreted" — *the hard part*, in full |
 | [`docs/Input-Method-Troubles.md`](docs/Input-Method-Troubles.md) | The input-method bug, start to finish, including what is still unsolved |
 | [`docs/Prototype.md`](docs/Prototype.md) · [`docs/MCU-Port.md`](docs/MCU-Port.md) | The Linux/Python prototype, and what moving the harness onto the chip actually cost |
-| [`docs/Compliance.md`](docs/Compliance.md) · [`docs/合规与授权说明.md`](docs/合规与授权说明.md) | Authorization & compliance notes (English / 中文) |
+| [`docs/Compliance.md`](docs/Compliance.md) | Authorization & compliance notes |
+
+Every document is available in Chinese as well: [`技术文档`](docs/技术文档.md) · [`失败分类学`](docs/失败分类学.md) · [`输入法问题`](docs/输入法问题.md) · [`原型`](docs/原型.md) · [`MCU移植`](docs/MCU移植.md) · [`合规与授权说明`](docs/合规与授权说明.md)
 
 ## License & disclaimer
 

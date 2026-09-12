@@ -1,5 +1,7 @@
 # Input Method Troubles
 
+> **English** | [中文](输入法问题.md)
+
 The longest-running and most expensive bug in this project's history. It is written up because the resolution is counterintuitive, and because it is a *class* of problem rather than a Windows quirk: **an output channel that the environment is allowed to rewrite.**
 
 ## The symptom

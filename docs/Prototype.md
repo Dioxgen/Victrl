@@ -1,5 +1,7 @@
 # The Prototype — Victrl on Linux, in Python
 
+> **English** | [中文](原型.md)
+
 *Historical. Frozen. Not the code in this repository.*
 
 Before any of this ran on a microcontroller, the same idea ran on a PC. The prototype was the cheapest way to answer one question: **can a model looking at a video capture of a screen, driving it through an emulated keyboard and mouse, actually complete tasks?** If the answer had been no, there would have been no point building hardware for it.

@@ -1,5 +1,7 @@
 # Failure Taxonomy
 
+> **English** | [中文](失败分类学.md)
+
 **The single most useful thing this project produced.**
 
 A hardware agent's output channel is character-level. The target machine is free to reinterpret those characters. That gap produced every expensive bug in the project, and the fix was not a better retry — it was teaching the harness to **classify the failure before acting on it**.
