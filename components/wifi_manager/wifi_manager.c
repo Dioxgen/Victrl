@@ -69,17 +69,32 @@ esp_err_t wifi_manager_start_sntp(const char *const *servers)
     esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
     esp_sntp_setservername(0, servers[0]);
 
-    /* lwIP only stores CONFIG_LWIP_SNTP_MAX_SERVERS entries. Anything beyond
-     * that used to be dropped in silence, which is exactly how a single
-     * unreachable server ended up being the only one ever tried. */
-    s_time.n_servers = 1;
+    /* lwIP keeps CONFIG_LWIP_SNTP_MAX_SERVERS entries. Anything beyond that is
+     * dropped in silence, which is exactly how a single unreachable server
+     * ended up being the only one ever tried. `servers` is NULL-terminated by
+     * the caller, so this loop stops at the end of the list. */
+    int lwip_servers = 1;
     for (int i = 1; i < CONFIG_LWIP_SNTP_MAX_SERVERS; i++) {
         if (!servers[i]) break;
         esp_sntp_setservername(i, servers[i]);
-        s_time.n_servers++;
+        lwip_servers++;
     }
+
+    /* `time_status_t.servers` has a fixed number of slots and its consumers
+     * (the boot log below and the WebUI) index it up to n_servers, so n_servers
+     * must never claim more names than were actually copied: raising
+     * CONFIG_LWIP_SNTP_MAX_SERVERS above the slot count used to write — and
+     * then read — 48 bytes past the end of the struct. */
+    const int store_slots =
+        (int)(sizeof(s_time.servers) / sizeof(s_time.servers[0]));
+    s_time.n_servers = (lwip_servers > store_slots) ? (uint8_t)store_slots
+                                                    : (uint8_t)lwip_servers;
     for (int i = 0; i < s_time.n_servers; i++) {
         snprintf(s_time.servers[i], sizeof(s_time.servers[i]), "%s", servers[i]);
+    }
+    if (lwip_servers > store_slots) {
+        ESP_LOGW(TAG, "SNTP: %d servers configured, only %d fit the status struct",
+                 lwip_servers, store_slots);
     }
 
     esp_sntp_set_time_sync_notification_cb(sntp_sync_cb);
@@ -133,6 +148,13 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        /* `wifi_manager_is_connected()` reads s_ip_addr, so the address has to
+         * go the moment the link drops. Leaving it set kept the device
+         * reporting a live connection — and the LCD and WebUI showing the old
+         * address — while it was in fact offline. */
+        snprintf(s_ip_addr, sizeof(s_ip_addr), "0.0.0.0");
+        xEventGroupClearBits(s_wifi_events, WIFI_CONNECTED_BIT);
+
         if (s_retry_count < 5) {
             esp_wifi_connect();
             s_retry_count++;

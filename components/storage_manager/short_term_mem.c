@@ -43,11 +43,30 @@ void stm_add(const char *summary)
             }
             s_entries[s_count - 1] = NULL;
             s_count--;
+        } else {
+            /* Out of memory: the compress path above is what frees a slot, so
+             * without this the append below would land on s_entries[s_max_len],
+             * one past the end of the array. Drop the oldest entry instead —
+             * losing the least recent summary beats corrupting the heap. */
+            ESP_LOGW(TAG, "Merge alloc failed; dropping oldest entry");
+            free(s_entries[0]);
+            for (size_t i = 1; i < s_count; i++) {
+                s_entries[i - 1] = s_entries[i];
+            }
+            s_entries[s_count - 1] = NULL;
+            s_count--;
         }
     }
 
-    s_entries[s_count] = strdup(summary);
-    s_count++;
+    /* A NULL here would leave a hole in the array that every reader walks with
+     * strlen(), so a failed copy is dropped rather than stored. */
+    char *copy = strdup(summary);
+    if (copy) {
+        s_entries[s_count] = copy;
+        s_count++;
+    } else {
+        ESP_LOGW(TAG, "Cannot store summary (out of memory)");
+    }
 
     xSemaphoreGive(s_mutex);
 }

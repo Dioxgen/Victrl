@@ -134,7 +134,7 @@ esp_err_t sdmmc_driver_init(const sdmmc_driver_config_t *config, sdmmc_card_t **
     if (ret != ESP_OK) {
         if (ret == ESP_FAIL) {
             ESP_LOGE(TAG, "Failed to mount filesystem. "
-                     "Enable SDMMC_DRIVER_FORMAT_IF_MOUNT_FAILED to auto-format.");
+                     "Enable CONFIG_SDMMC_DRV_FORMAT_IF_MOUNT_FAILED to auto-format.");
         } else {
             ESP_LOGE(TAG, "Failed to initialize SD card (%s). "
                      "Check pull-up resistors on signal lines.", esp_err_to_name(ret));

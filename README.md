@@ -211,6 +211,8 @@ Every document is available in Chinese as well: [`技术文档`](docs/技术文�
 
 Every component under [`components/`](components/) also carries its own README — `components/<name>/README.md` and `README_CN.md` — documenting its public API, its Kconfig options and the parts of its source that are easiest to misread.
 
+Recent changes are recorded in [`CHANGELOG.md`](CHANGELOG.md) ([中文](CHANGELOG_CN.md)).
+
 ## License & disclaimer
 
 Victrl is open-sourced under the **Apache 2.0 License**. It is intended for research, automation and **lawfully authorized** operations only. Users must bear the risk that automated operations may violate the licence agreements of target devices. Using Victrl for cracking, intrusion, or unauthorized control of computer information systems is prohibited. The Apache 2.0 licence grants copyright permissions only — **it does not, and cannot, exempt anyone from criminal or administrative liability.**

@@ -630,7 +630,27 @@ void agent_main_loop_task(void *pvParameters)
     uvc_frame_sig_t prev_sig = {0};
     bool have_prev_sig = false;
 
+    /* Single-step support. `agent_step_once()` puts the loop in STEP, which
+     * must run exactly one iteration and then fall back to PAUSED. The flag is
+     * raised when an iteration starts in STEP and consumed at the top of the
+     * next iteration, so every exit path (done, max actions, abort, normal)
+     * lands in PAUSED the same way. The check used to live behind
+     * `!agent_should_continue(ctx)`, which is only true when the state is
+     * neither RUNNING nor STEP — so it could never fire and "step once"
+     * behaved exactly like RUN. */
+    bool ran_single_step = false;
+
     while (1) {
+        if (ran_single_step) {
+            xSemaphoreTake(ctx->state_mutex, portMAX_DELAY);
+            if (ctx->state == AGENT_STATE_STEP) {
+                ctx->state = AGENT_STATE_PAUSED;
+                ESP_LOGI(TAG, "Single step complete - paused");
+            }
+            xSemaphoreGive(ctx->state_mutex);
+            ran_single_step = false;
+        }
+
         /* Block only if not actively running (IDLE/PAUSED) */
         EventBits_t bits;
         if (!agent_should_continue(ctx)) {
@@ -660,14 +680,13 @@ void agent_main_loop_task(void *pvParameters)
 
         /* State check */
         if (!agent_should_continue(ctx)) {
-            /* Single step done, return to PAUSED */
-            xSemaphoreTake(ctx->state_mutex, portMAX_DELAY);
-            if (ctx->state == AGENT_STATE_STEP) {
-                ctx->state = AGENT_STATE_PAUSED;
-            }
-            xSemaphoreGive(ctx->state_mutex);
             continue;
         }
+
+        /* Is this iteration the one the user asked for with "step once"? */
+        xSemaphoreTake(ctx->state_mutex, portMAX_DELAY);
+        ran_single_step = (ctx->state == AGENT_STATE_STEP);
+        xSemaphoreGive(ctx->state_mutex);
 
         /* Check max actions */
         if (ctx->action_count >= ctx->max_actions) {
@@ -990,12 +1009,15 @@ void agent_main_loop_task(void *pvParameters)
                 /* ── Step 10: Sleep before next ──
                  * The floor is unconditional now: a fresh frame is always
                  * captured next, so the UI must always be given time to
-                 * repaint before it is read. */
+                 * repaint before it is read. A single step is the exception —
+                 * one iteration was asked for, so it returns to PAUSED at once
+                 * instead of sitting out the inter-step delay. */
                 double delay_s = sleep_before;
                 if (delay_s < 1.0) {
                     delay_s = 1.0;
                 }
                 if (delay_s > 300.0) delay_s = 300.0;  /* cap a bogus huge sleep */
+                if (ran_single_step) delay_s = 0.0;
                 int64_t t_sleep = esp_timer_get_time();
                 if (delay_s > 0) {
                     vTaskDelay(pdMS_TO_TICKS((uint32_t)(delay_s * 1000)));

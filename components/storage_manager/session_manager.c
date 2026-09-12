@@ -18,6 +18,10 @@ static char s_base_dir[64] = "/sdcard/sessions";
 static char s_cur_id[SESSION_ID_LEN] = {0};
 static char s_cur_goal[SESSION_GOAL_LEN] = {0};
 static uint32_t s_cur_steps = 0;
+/* Creation time of the loaded session. Kept alongside the other current-session
+ * fields because write_meta() has to re-emit it: it only runs on the session
+ * that is loaded, and read_meta() is not called again during a run. */
+static char s_cur_created[24] = {0};
 static SemaphoreHandle_t s_mutex = NULL;
 
 /* Path buffers are sized for the worst case that can actually occur:
@@ -131,6 +135,12 @@ static bool write_meta(void)
     cJSON_AddStringToObject(m, "title", title);
     cJSON_AddStringToObject(m, "goal", s_cur_goal);
     cJSON_AddNumberToObject(m, "steps", s_cur_steps);
+    /* Re-emit the creation time. Without this, every rewrite of meta.json
+     * (session_mgr_set_steps() runs each step) dropped the field, so a loaded
+     * session lost the time it was created. */
+    if (s_cur_created[0]) {
+        cJSON_AddStringToObject(m, "created", s_cur_created);
+    }
 
     char *js = cJSON_PrintUnformatted(m);
     cJSON_Delete(m);
@@ -329,6 +339,7 @@ esp_err_t session_mgr_create(const char *goal, char id_out[SESSION_ID_LEN])
     if (strftime(created, sizeof(created), "%Y-%m-%d %H:%M:%S", &tmv) == 0) {
         snprintf(created, sizeof(created), "%s", "unknown");
     }
+    utf8_copy(s_cur_created, sizeof(s_cur_created), created);
 
     cJSON *m = cJSON_CreateObject();
     if (m) {
@@ -371,6 +382,7 @@ esp_err_t session_mgr_load(const char *id)
 
     utf8_copy(s_cur_id, sizeof(s_cur_id), info.id);
     utf8_copy(s_cur_goal, sizeof(s_cur_goal), info.goal);
+    utf8_copy(s_cur_created, sizeof(s_cur_created), info.created);
     s_cur_steps = info.steps;
 
     /* Point the plan manager at this session and load its plan. */
@@ -496,7 +508,10 @@ esp_err_t session_mgr_delete(const char *id)
         return ESP_FAIL;
     }
 
-    if (strcmp(sid, s_cur_id) == 0) s_cur_id[0] = '\0';
+    if (strcmp(sid, s_cur_id) == 0) {
+        s_cur_id[0] = '\0';
+        s_cur_created[0] = '\0';
+    }
     ESP_LOGI(TAG, "Deleted session %s", sid);
     return ESP_OK;
 }
