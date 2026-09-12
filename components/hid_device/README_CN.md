@@ -15,6 +15,22 @@
 | 鼠标 | Report ID `2`，绝对坐标 X/Y（0~32767）、3 个按键位、8 位相对滚轮（-127~127），共 6 字节 |
 | 端点 | 中断 IN 端点 `0x81`，包长 16 字节，轮询间隔 1 ms |
 
+## 设备身份（USB 描述符）
+
+主机看到的这些字符串是有意为之，不是顺带产物：这台设备要的是可被识别，而不是被隐藏；主机若无法判断接上来的是什么，也就无法审计它。
+
+| 字段 | 取值 |
+|------|---------|
+| 制造商（字符串 1） | `Victrl` |
+| 产品（字符串 2） | `Victrl HID Bridge` |
+| 序列号（字符串 3） | `VIC-` 加芯片 base MAC 的六个字节十六进制，例如 `VIC-3C71BF0A1B2C` |
+| HID 接口（字符串 4） | `Victrl HID` |
+| VID : PID | `0x303A` : `0x4001` |
+
+`hid_device_init()` 用 `esp_read_mac(mac, ESP_MAC_BASE)` 生成序列号，并在调用 `tinyusb_driver_install()` **之前**写进 `s_usb_strings[3]`。顺序很关键：`descriptors_control.c` 是在 install 时把数组里的**指针**拷走的；而该缓冲是静态的，因此在设备整个生命周期内都有效。若 MAC 读取失败，则保留占位串 `0001` 并打一条警告。
+
+此前每台设备都报固定的 `0001`，那只能识别型号、永远识别不出具体是哪一台。`CONFIG_TINYUSB_DESC_USE_ESPRESSIF_VID` 与 `CONFIG_TINYUSB_DESC_USE_DEFAULT_PID` 都处于开启状态，所以 `0x303A:0x4001` 是乐鑫默认值、与其他 ESP32 板子共用——真正用于识别某一台设备的是这些字符串，尤其是序列号。`sdkconfig` 里的 `CONFIG_TINYUSB_DESC_*` 字符串并不是主机实际收到的内容：固件传的是自己的 `s_usb_strings` 数组，而应用提供的数组优先级高于默认值。
+
 ## 绝对坐标映射
 
 ```

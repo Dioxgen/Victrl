@@ -15,6 +15,22 @@ A TinyUSB composite HID device: one HID interface exposes both a 6KRO keyboard a
 | Mouse | Report ID `2`, absolute X/Y (0~32767), 3 button bits, 8-bit relative wheel (-127~127), 6 bytes total |
 | Endpoint | Interrupt IN endpoint `0x81`, packet size 16, polling interval 1 ms |
 
+## Device identity (USB descriptors)
+
+The strings the host sees are deliberate rather than incidental: this device is meant to be identifiable, not concealed, and a host that cannot tell what is attached cannot audit it either.
+
+| Field | Value |
+|------|---------|
+| Manufacturer (string 1) | `Victrl` |
+| Product (string 2) | `Victrl HID Bridge` |
+| Serial (string 3) | `VIC-` followed by the six bytes of the chip's base MAC in hex, e.g. `VIC-3C71BF0A1B2C` |
+| HID interface (string 4) | `Victrl HID` |
+| VID : PID | `0x303A` : `0x4001` |
+
+`hid_device_init()` builds the serial from `esp_read_mac(mac, ESP_MAC_BASE)` and writes it into `s_usb_strings[3]` **before** calling `tinyusb_driver_install()`. The order matters: `descriptors_control.c` copies the *pointers* out of the array at install time, and because the buffer is static it stays valid for the life of the device. If the MAC cannot be read the placeholder `0001` is kept and a warning is logged.
+
+Every unit used to report the fixed serial `0001`, which identified the model but never the unit. Both `CONFIG_TINYUSB_DESC_USE_ESPRESSIF_VID` and `CONFIG_TINYUSB_DESC_USE_DEFAULT_PID` are enabled, so `0x303A:0x4001` is Espressif's default and is shared with other ESP32 boards — the strings, and the serial in particular, are what identify a specific device. The `CONFIG_TINYUSB_DESC_*` strings in `sdkconfig` are not what the host receives: the firmware passes its own `s_usb_strings` array, and an application-supplied array takes precedence over the defaults.
+
 ## Absolute coordinate mapping
 
 ```

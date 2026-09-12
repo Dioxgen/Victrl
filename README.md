@@ -33,7 +33,7 @@ The LLM is a stateless function called over HTTPS. Everything that turns a state
 - the MJPEG decode, region-of-interest crop/scale, re-encode and upload pipeline
 - the HID synthesis, and the on-device WebUI
 
-There is no Linux, no Python and no OS on the board — ESP-IDF 6.0.1 with FreeRTOS, 32 MB of PSRAM and a microSD card. The cloud does inference and nothing else, for this project and for software agents alike; what differs is where the *rest* runs. A software agent's harness and memory need a general-purpose OS plus a software path to the target — the target itself, or a machine that reaches it over the network, an API or a remote-desktop protocol. Here both live on a microcontroller outside the target: the trajectory, plan and session store never touch the target's disk, and the target's software has no handle on the device that holds them.
+There is no Linux, no Python and no OS on the board — ESP-IDF 6.0.1 with FreeRTOS, 32 MB of PSRAM and a microSD card. The cloud does inference and nothing else, for this project and for software agents alike; what differs is where the *rest* runs. A software agent's harness and memory need a general-purpose OS plus a software path to the target — the target itself, or a machine that reaches it over the network, an API or a remote-desktop protocol. Here both live on a microcontroller outside the target: the trajectory, plan and session store never touch the target's disk. What the target *can* see is the device itself — it enumerates as a USB HID device named **Victrl HID Bridge** by **Victrl**, carrying a per-device serial derived from the chip's MAC. Being identifiable is deliberate: a peripheral that could not be attributed would be a concealment tool, and this is not one.
 
 ## Value & characteristics
 
@@ -182,7 +182,7 @@ Full technical documentation: [`docs/技术文档.md`](docs/技术文档.md) (Ch
 ## What this does **not** do
 
 - **It is not a software agent.** It cannot run inside the target, read its files, or call its APIs. If you can install software on the target, use a software tool — it will be faster and more capable.
-- **It needs a video output it can capture.** Machines with no display output, DRM-protected video, or output that never reaches the capture card are out of reach.
+- **It needs a video output it can capture.** Machines with no display output, DRM-protected video, or output that never reaches the capture card are out of reach. A camera-based variant that *recognises* a screen instead of capturing it would drop even that requirement; it is a direction, not something implemented here.
 - **It needs the target to accept a USB keyboard.** Bluetooth HID is a natural extension; USB is what is implemented today.
 - **It runs as the logged-in user, and nothing more.** An unattended machine sitting at a lock screen is not something Victrl can get past — by design, it has no bypass capability.
 - **Chinese IMEs are a real limitation.** In Chinese mode, digits typed into GUI text fields are consumed. There are workarounds; a task that genuinely requires typing digits into a text field on such a machine is blocked.
@@ -193,7 +193,7 @@ Full technical documentation: [`docs/技术文档.md`](docs/技术文档.md) (Ch
 
 ## Caution
 
-Victrl turns "visual automation" from a software approach into a hardware peripheral. It attaches to the target as an ordinary external display sink plus a standard USB keyboard and mouse. It contains no exploit, no vulnerability, no credential or signature bypass, and no logic aimed at defeating security controls: it neither breaks into a system nor reads its stored data, and it sees the target only through its display output.
+Victrl turns "visual automation" from a software approach into a hardware peripheral. It attaches to the target as an ordinary external display sink plus a standard USB keyboard and mouse. It contains no exploit, no vulnerability, no credential or signature bypass, and no logic aimed at defeating security controls: it neither breaks into a system nor reads its stored data, and it sees the target only through its display output. It also does not hide itself — it announces a manufacturer, a product name and a per-device serial to the host, so the target can always tell that it is attached, and which unit it is.
 
 Because the target treats it as a normal keyboard and mouse, it can perform **any keyboard/mouse operation** the logged-in user could perform — including **running commands, deleting files, modifying system settings, and downloading software**. The target's own permission model and login state still apply: Victrl operates *as* whoever is logged in, and never as a higher-privileged identity.
 

@@ -10,6 +10,22 @@ The original bring-up was latency-bound: the API accounted for 64–91 % of ever
 
 It was restarted once the current model generation — DeepSeek V4.1 flash, `model_name: "deepseek-flash"` — made the loop practical: much higher output throughput, and native vision, which removes the OCR or image-description layer the design would otherwise need before it could see a screen at all. Nothing in the harness had to change to accommodate it, which is the point of keeping the model a stateless function behind one config key.
 
+## 2026-09-12 — positioning, and device identity
+
+### Added
+
+The main README now says where a software agent cannot go: before the target has a usable OS, on targets that cannot take software at all, and when the target's own network is the fault — the one case where a software agent is offline at exactly the moment it is needed, because it reaches the model through the very network that is broken.
+
+`hid_device`: the USB serial number is now derived from the chip's base MAC (`VIC-xxxxxxxxxxxx`). Every unit used to report the fixed string `0001`, so a host log could say that a Victrl had been attached but never which one. The manufacturer (`Victrl`), product (`Victrl HID Bridge`) and HID interface (`Victrl HID`) strings were already there.
+
+The README notes that a camera-based variant which recognises a screen instead of capturing it would remove the video-output requirement. That is a direction, not something implemented.
+
+### Changed
+
+The README no longer claims that the target cannot perceive the device. It can: the device enumerates by name with a per-device serial, and that is deliberate — a peripheral that could not be attributed would be a concealment tool, which the usage principles forbid. What the target cannot do is reach into it, and none of the trajectory, plan or session store ever touches the target's disk.
+
+A false contrast was removed: "a cloud agent framework keeps its memory on a server" is not true of any mainstream framework. The cloud does inference only — for software agents as much as for this project — and their harness and memory run locally. What actually differs is that a software agent needs a general-purpose OS plus a software path into the target, while here both the harness and the memory sit on a microcontroller outside it.
+
 ## 2026-09-12 — component documentation audit
 
 ### Fixed

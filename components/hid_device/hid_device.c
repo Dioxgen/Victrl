@@ -5,6 +5,7 @@
 #include "hid_keymap.h"
 #include "hid_reports.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "tinyusb.h"
 #include "tinyusb_default_config.h"
 #include "freertos/FreeRTOS.h"
@@ -70,11 +71,18 @@ static const uint8_t s_hid_report_desc[] = {
 
 /* ── USB Descriptors ───────────────────────────────────────────────── */
 
+/* The identity this device presents is part of the compliance story, not an
+ * implementation detail: it is deliberately NOT a cloaked peripheral. The host
+ * can see exactly what it is (manufacturer, product, HID interface) in Device
+ * Manager or `lsusb`, which is what "no concealment" has to mean in practice.
+ * A host that cannot tell what is attached cannot audit it either. */
+static char s_serial[24] = "0001";
+
 static const char *s_usb_strings[] = {
     (char[]){0x09, 0x04},  /* 0: English */
     "Victrl",              /* 1: Manufacturer */
     "Victrl HID Bridge",   /* 2: Product */
-    "0001",                /* 3: Serial */
+    s_serial,              /* 3: Serial — replaced with the chip MAC at init */
     "Victrl HID",          /* 4: HID Interface */
 };
 
@@ -209,6 +217,21 @@ esp_err_t hid_device_init(void)
 
     /* Use second USB port (OTG1) to avoid conflict with MS2109 on OTG0 */
     tusb_cfg.port = TINYUSB_PORT_FULL_SPEED_0;
+
+    /* A per-device serial, derived from the chip's base MAC. The descriptor
+     * used to be the fixed string "0001", which identified the model but not
+     * the unit — so a host log could say "a Victrl was here" and nothing more.
+     * With this, an operator or an auditor can tell which physical device
+     * drove which machine. It is readable before any driver binds, so it is
+     * available to the target even if the target runs nothing of ours. */
+    uint8_t mac[6] = {0};
+    if (esp_read_mac(mac, ESP_MAC_BASE) == ESP_OK) {
+        snprintf(s_serial, sizeof(s_serial), "VIC-%02X%02X%02X%02X%02X%02X",
+                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    } else {
+        ESP_LOGW(TAG, "Cannot read base MAC; using placeholder serial");
+    }
+    s_usb_strings[3] = s_serial;
 
     tusb_cfg.descriptor.device = &s_device_desc;
     tusb_cfg.descriptor.full_speed_config = s_config_desc;
