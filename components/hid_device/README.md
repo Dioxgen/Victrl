@@ -33,6 +33,8 @@ Every unit used to report the fixed serial `0001`, which identified the model bu
 
 To check what a host actually received, read the property the device reported rather than the node name. On Windows, take the instance id from `Get-PnpDevice | Where-Object InstanceId -like 'USB\VID_303A&PID_4001*'` and then read `(Get-PnpDeviceProperty -InstanceId <id> -KeyName DEVPKEY_Device_BusReportedDeviceDesc).Data` — that string is the `iProduct` value as it arrived; the same value is in Device Manager under Properties → Details → "Bus reported device description". On Linux, `lsusb -v -d 303a:4001` prints `iManufacturer`, `iProduct` and `iSerialNumber`. Device Manager names a HID device after the class driver, so "HID Keyboard Device" under Keyboards is expected and says nothing about these strings — checking that node is how a working descriptor gets mistaken for a broken one.
 
+`Get-PnpDevice` also lists instances that are no longer attached, so add `-PresentOnly` before drawing any conclusion. Windows keeps one cached node per (VID, PID, serial) triple, so firmware revisions that changed these strings leave their own entries behind — a single board can appear four times, three of them ghosts reporting names from firmware that is no longer flashed. That is the other half of how a working descriptor gets mistaken for a broken one.
+
 ## Absolute coordinate mapping
 
 ```

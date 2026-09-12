@@ -33,6 +33,8 @@
 
 要确认主机究竟收到了什么，请读设备上报的属性，而不是节点名。在 Windows 上用 `Get-PnpDevice | Where-Object InstanceId -like 'USB\VID_303A&PID_4001*'` 拿到实例 id，再读 `(Get-PnpDeviceProperty -InstanceId <id> -KeyName DEVPKEY_Device_BusReportedDeviceDesc).Data`——这个字符串就是实际送达的 `iProduct` 值；设备管理器里“属性 → 详细信息 → 总线报告的设备描述”是同一个值。在 Linux 上 `lsusb -v -d 303a:4001` 会打印 `iManufacturer`、`iProduct` 和 `iSerialNumber`。设备管理器对 HID 设备显示的是类驱动名，所以“键盘”下面的 “HID Keyboard Device” 是正常现象，与这些字符串无关——去看那个节点，正是把正常工作的描述符误判为失效的原因。
 
+`Get-PnpDevice` 还会列出已经不在的设备实例，所以下结论前要加 `-PresentOnly` 过滤。Windows 按 (VID, PID, 序列号) 三元组各缓存一个节点，因此凡是改动过这些字符串的固件版本都会留下自己的条目——同一块板子可能显示成四条，其中三条是幽灵，报的是早已不再烧录的固件里的名字。这是“正常工作的描述符被误判为失效”的另一半原因。
+
 ## 绝对坐标映射
 
 ```
