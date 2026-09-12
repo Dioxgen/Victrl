@@ -145,8 +145,7 @@ cp sdcard/config.example.json sdcard/config.json   # 填入 API key 与 WiFi 凭
 
 `config.json` 已被 git 忽略——它含活凭据，模板是 [`sdcard/config.example.json`](sdcard/config.example.json)。
 
-设备会自己起一个 WebUI：仪表板、会话（对话窗口）、实时画面预览、SD 卡文件浏览，以及**每步耗时分解**
-（`total / capture / prep(setup,dec,rs,enc) / connect / http / parse / sdlog / exec / sleep`）。单步慢的时候第一个该看的就是它——本页所有数字也都是这样测出来的。
+设备会自己起一个 WebUI：仪表板、会话（对话窗口）、实时画面预览、SD 卡文件浏览，以及**每步耗时分解**（`total / capture / prep(setup,dec,rs,enc) / connect / http / parse / sdlog / exec / sleep`）。单步慢的时候第一个该看的就是它——本页所有数字也都是这样测出来的。
 
 完整技术文档：[`docs/技术文档.md`](docs/技术文档.md)（比本页详细得多）。
 

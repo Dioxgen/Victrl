@@ -2,10 +2,7 @@
 
 *Historical. Frozen. Not the code in this repository.*
 
-Before any of this ran on a microcontroller, the same idea ran on a PC. The prototype was the
-cheapest way to answer one question: **can a model looking at a video capture of a screen, driving
-it through an emulated keyboard and mouse, actually complete tasks?** If the answer had been no,
-there would have been no point building hardware for it.
+Before any of this ran on a microcontroller, the same idea ran on a PC. The prototype was the cheapest way to answer one question: **can a model looking at a video capture of a screen, driving it through an emulated keyboard and mouse, actually complete tasks?** If the answer had been no, there would have been no point building hardware for it.
 
 ## Shape
 
@@ -39,31 +36,19 @@ there would have been no point building hardware for it.
 ## What it proved
 
 - **The loop works.** Capture → model → JSON action → HID → re-capture, repeatedly, on real tasks.
-- **A model can be driven entirely by pixels and a text status line.** No target-side integration of
-  any kind was needed, on any of Windows, Linux, macOS or Android.
-- **The state belongs in three layers, not one.** Transient history, the current plan, and durable
-  facts about *this machine* have different lifetimes and different costs, and mixing them makes the
-  agent worse. That conclusion carried over to the MCU version unchanged — today it is the
-  trajectory, the plan, and the device profile.
-- **The HID side is the fragile side.** Almost none of the difficulty was in the model; it was in
-  making keystrokes and clicks land exactly where they were aimed.
+- **A model can be driven entirely by pixels and a text status line.** No target-side integration of any kind was needed, on any of Windows, Linux, macOS or Android.
+- **The state belongs in three layers, not one.** Transient history, the current plan, and durable facts about *this machine* have different lifetimes and different costs, and mixing them makes the agent worse. That conclusion carried over to the MCU version unchanged — today it is the trajectory, the plan, and the device profile.
+- **The HID side is the fragile side.** Almost none of the difficulty was in the model; it was in making keystrokes and clicks land exactly where they were aimed.
 
 ## Why it was retired
 
 Nothing was wrong with it. It answered its question and then became a liability:
 
-- **It could not make the claim the project is about.** "An AI agent that automates anything" is
-  much weaker when it needs a PC, a Linux install, and a serial bridge to run. The claim that matters
-  is that the agent is *a device*.
-- **Latency was dominated by the round trip, so the PC bought nothing.** Every step is 3–7 seconds of
-  waiting on a model. Running the loop on a desktop CPU was never the bottleneck.
-- **Two implementations is one too many.** Keeping a Python version current alongside the firmware
-  means every protocol change, every prompt change and every coordinate fix has to be made twice, and
-  the second one is always the one that rots.
+- **It could not make the claim the project is about.** "An AI agent that automates anything" is much weaker when it needs a PC, a Linux install, and a serial bridge to run. The claim that matters is that the agent is *a device*.
+- **Latency was dominated by the round trip, so the PC bought nothing.** Every step is 3–7 seconds of waiting on a model. Running the loop on a desktop CPU was never the bottleneck.
+- **Two implementations is one too many.** Keeping a Python version current alongside the firmware means every protocol change, every prompt change and every coordinate fix has to be made twice, and the second one is always the one that rots.
 
-The prototype is therefore frozen at its last version and kept for reference only. Its architecture
-is not a template for the current code; the current code re-derived the same structure from the
-constraints of the chip.
+The prototype is therefore frozen at its last version and kept for reference only. Its architecture is not a template for the current code; the current code re-derived the same structure from the constraints of the chip.
 
 ## What carried over, and what did not
 
