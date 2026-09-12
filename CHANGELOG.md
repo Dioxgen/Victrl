@@ -2,7 +2,13 @@
 
 > **English** | [中文](CHANGELOG_CN.md)
 
-A concise record of what changed and when. Dates are commit dates, not release dates — this project has no release cadence, and nothing here is claimed to be hardware-tested unless the entry says so.
+A concise record of what changed and when. Dates here are real dates, not commit dates: the ESP32-P4 work was done in a separate workspace and imported into this repository on 2026-09-12, so several commits carry September dates while the work they contain is older.
+
+## 2026-09 — the project is revived on a faster multimodal model
+
+The original bring-up was latency-bound: the API accounted for 64–91 % of every step, and a step costs roughly its output tokens divided by the model's throughput. The project was paused rather than tuned, because the dominant term was not ours to optimise.
+
+It was restarted once the current model generation — DeepSeek V4.1 flash, `model_name: "deepseek-flash"` — made the loop practical: much higher output throughput, and native vision, which removes the OCR or image-description layer the design would otherwise need before it could see a screen at all. Nothing in the harness had to change to accommodate it, which is the point of keeping the model a stateless function behind one config key.
 
 ## 2026-09-12 — component documentation audit
 
@@ -36,20 +42,16 @@ Three stale `README.md.old` files.
 
 `wifi_manager`: `time_status_t.failures` is exposed in `/api/status` but never incremented. lwIP's SNTP has no failure callback, so a real value would need a "started but never synced" watchdog. The field is left in place, but treat a zero as "not measured" rather than "no failures".
 
-## 2026-09-12 — the agent loop runs on the ESP32-P4
+## 2026-09-11 — the input-method channel experiments
+
+The numeric-keypad hypothesis was falsified: on Microsoft Pinyin the keypad digits are consumed as candidate-selection keys, exactly like the main number row. The experiment is recorded in `docs/Technical-Document.md` along with the reason it took so long to settle — the `type` action summary had to start recording the **channel** it used before "the keypad was eaten too" could be told apart from "the keypad was never tried".
+
+## 2026-05-30 — the agent loop runs on the ESP32-P4
 
 The harness moved off the PC and onto the chip. UVC capture through an MS2109 card, the P4 hardware JPEG codec, TinyUSB composite HID output, SD-card storage, ESP-Hosted WiFi on the C6, the NV3007 status panel and the WebUI all run on the device; the PC is no longer part of the loop.
 
-The Linux/Python MVP was demoted to `prototype/` and kept as reference. See `docs/Prototype.md` for what the port cost.
-
 Line endings were pinned to LF with `.gitattributes` so the system prompts on the SD card stay byte-identical between checkouts — the API prefix cache depends on exactly that.
-
-## 2026-09-12 — documentation set
-
-Every document exists as an English/Chinese pair: `Technical-Document` / `技术文档`, `Failure-Taxonomy` / `失败分类学`, `Input-Method-Troubles` / `输入法问题`, `Prototype` / `原型`, `MCU-Port` / `MCU移植`, `Compliance` / `合规与授权说明`.
-
-Hardware photos were added under `Images/`, the architecture diagram was rewritten in Mermaid-8-compatible syntax, and the wiki was folded into `docs/`.
 
 ## 2026-05 — the Linux/Python prototype (V2.0)
 
-The original MVP: the agent loop on a PC, driving a target machine through a USB capture card and a HID device. It is the source of the failure taxonomy and most of the input-method findings. Kept for reference under `prototype/`.
+The original MVP: the agent loop on a PC, driving a target machine through a USB capture card and a HID device. It is the source of the failure taxonomy and most of the input-method findings, and it was the first proof that the loop works at all. Kept for reference under `prototype/`; see `docs/Prototype.md` for what moving it onto the chip cost.

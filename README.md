@@ -93,6 +93,8 @@ Each step: capture a frame, optionally crop/scale it to a region of interest, en
 | Full-resolution decode buffer | 6.2 MB, **cached across steps** |
 | Trajectory store | text only, zero historical screenshots |
 
+These numbers come from the ESP32-P4 build talking to **DeepSeek V4.1 flash** (`model_name: "deepseek-flash"`) — a fast, natively multimodal model. Both properties are load-bearing here: the API dominates every step, so step latency is essentially output tokens divided by model throughput, and native vision is what lets the device upload a screen rather than a description of one.
+
 Two conclusions fell out of the numbers that were not obvious:
 
 **Output tokens dominate latency, not capture or codecs.** Giving the model explicit per-field text budgets cut output by **43–58 %** and API time by **15–25 %**. No image-pipeline optimisation came close.
